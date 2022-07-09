@@ -81,7 +81,7 @@ class WhaleDataset(torch.utils.data.Dataset):
         if len(im.shape) == 2:
             im = np.stack((im,) * 3, axis=-1)
 
-        # im = np.float32(np.transpose(im, axes=(2, 0, 1))) / 255
+        im = np.float32(np.transpose(im, axes=(2, 0, 1))) / 255
 
         return im, label
 

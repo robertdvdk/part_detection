@@ -226,7 +226,7 @@ def main():
     number_epochs = 40
     model_name = 'landmarks_10_nodrop_4.pt'
     model_name_init = 'landmarks_10_nodrop_4.pt'
-    warm_start = True
+    warm_start = False
     do_only_test = True
 
     do_baseline = False
@@ -250,10 +250,10 @@ def main():
 
     test_batch = []
     test_batch_labels = []
-    for id in test_list: # TODO what is test_list? -> probably list of whale ids in test set
-        num = list(dataset_full.names).index(id)
-        test_batch.append(torch.Tensor(dataset_full[num][0]).unsqueeze(0))
-        test_batch_labels.append(dataset_full.unique_labels[dataset_full[num][1]])
+    # for id in test_list: # TODO what is test_list? -> probably list of whale ids in test set
+    #     num = list(dataset_full.names).index(id)
+    #     test_batch.append(torch.Tensor(dataset_full[num][0]).unsqueeze(0))
+    #     test_batch_labels.append(dataset_full.unique_labels[dataset_full[num][1]])
 
 
     for epoch in range(number_epochs):
