@@ -162,6 +162,8 @@ def train(net, train_loader, device, do_baseline, model_name,epoch):
             running_loss_class = loss_class.item()
             # running_loss_masked_diff = loss_masked_diff.item()
         else:
+            #TODO fix "local variable 'running_loss' referenced before assignment"
+
             # noinspection PyUnboundLocalVariable
             running_loss = 0.99 * running_loss + 0.01 * loss.item()
             # noinspection PyUnboundLocalVariable
@@ -227,7 +229,7 @@ def main():
     model_name = 'landmarks_10_nodrop_4.pt'
     model_name_init = 'landmarks_10_nodrop_4.pt'
     warm_start = False
-    do_only_test = True
+    do_only_test = False
 
     do_baseline = False
     num_landmarks = 10
