@@ -2,8 +2,11 @@
 import numpy as np
 import torch
 import torchvision
+import torchvision.transforms.functional
+
 from torch.utils.data import Dataset
 from tqdm import tqdm
+import os
 
 from datasets import WhaleDataset, WhaleTripletDataset
 from nets import Net, LandmarkNet
@@ -36,52 +39,52 @@ def train(net, train_loader, device, do_baseline, model_name,epoch):
             all_training_vectors.append(anchor.cpu())
             all_training_labels.append(sample[3])
 
-            # Flip the positive and the anchor
-            do_class = 1
+        # Flip the positive and the anchor
+        do_class = 1
+        if np.random.rand() > 0.5:
+            sample[0] = sample[0].flip(-1)
+            sample[1] = sample[1].flip(-1)
+            do_class = 0
+        # Flip the negative
+        if np.random.rand() > 0.5:
+            sample[2] = sample[2].flip(-1)
+
+        # Substitute the negative with the flipped positive or anchor
+        if np.random.rand() > 0.9:
             if np.random.rand() > 0.5:
-                sample[0] = sample[0].flip(-1)
-                sample[1] = sample[1].flip(-1)
-                do_class = 0
-            # Flip the negative
-            if np.random.rand() > 0.5:
-                sample[2] = sample[2].flip(-1)
+                sample[2] = sample[0].flip(-1)
+            else:
+                sample[2] = sample[1].flip(-1)
 
-            # Substitute the negative with the flipped positive or anchor
-            if np.random.rand() > 0.9:
-                if np.random.rand() > 0.5:
-                    sample[2] = sample[0].flip(-1)
-                else:
-                    sample[2] = sample[1].flip(-1)
+        angle = np.random.randn() * 0.1
+        scale = np.random.rand() * 0.2 + 0.9
+        sample[0] = torchvision.transforms.functional.affine(sample[0],
+                                                             angle=angle * 180 / np.pi,
+                                                             translate=[0,
+                                                                        0],
+                                                             scale=scale,
+                                                             shear=0)
+        angle = np.random.randn() * 0.1
+        scale = np.random.rand() * 0.2 + 0.9
+        sample[1] = torchvision.transforms.functional.affine(sample[1],
+                                                             angle=angle * 180 / np.pi,
+                                                             translate=[0,
+                                                                        0],
+                                                             scale=scale,
+                                                             shear=0)
+        angle = np.random.randn() * 0.1
+        scale = np.random.rand() * 0.2 + 0.9
+        sample[2] = torchvision.transforms.functional.affine(sample[2],
+                                                             angle=angle * 180 / np.pi,
+                                                             translate=[0,
+                                                                        0],
+                                                             scale=scale,
+                                                             shear=0)
 
-            angle = np.random.randn() * 0.1
-            scale = np.random.rand() * 0.2 + 0.9
-            sample[0] = torchvision.transforms.functional.affine(sample[0],
-                                                                 angle=angle * 180 / np.pi,
-                                                                 translate=[0,
-                                                                            0],
-                                                                 scale=scale,
-                                                                 shear=0)
-            angle = np.random.randn() * 0.1
-            scale = np.random.rand() * 0.2 + 0.9
-            sample[1] = torchvision.transforms.functional.affine(sample[1],
-                                                                 angle=angle * 180 / np.pi,
-                                                                 translate=[0,
-                                                                            0],
-                                                                 scale=scale,
-                                                                 shear=0)
-            angle = np.random.randn() * 0.1
-            scale = np.random.rand() * 0.2 + 0.9
-            sample[2] = torchvision.transforms.functional.affine(sample[2],
-                                                                 angle=angle * 180 / np.pi,
-                                                                 translate=[0,
-                                                                            0],
-                                                                 scale=scale,
-                                                                 shear=0)
-
-            anchor, maps, scores_anchor, feature_tensor = net(
-                sample[0].to(device))
-            positive, _, scores_pos, _ = net(sample[1].to(device))
-            negative, _, _, _ = net(sample[2].to(device))
+        anchor, maps, scores_anchor, feature_tensor = net(
+            sample[0].to(device))
+        positive, _, scores_pos, _ = net(sample[1].to(device))
+        negative, _, _, _ = net(sample[2].to(device))
 
         if not do_baseline:
             net.avg_dist_pos.data = net.avg_dist_pos.data * 0.95 + (
@@ -112,28 +115,28 @@ def train(net, train_loader, device, do_baseline, model_name,epoch):
                             (anchor.shape[2] - 1))
                 # loss_class += (classif_loss(scores_anchor[:,:,lm],sample[3].to(device))/2 + classif_loss(scores_pos[:,:,lm],sample[3].to(device))/2)/((anchor.shape[2]-1))
 
-                for drops in range(0):
-                    # dropout_mask = (torch.rand(1,1,scores_anchor.shape[-1])>np.random.rand()*0.5).float().to(device)
-                    dropout_mask = (torch.rand(1, 1, scores_anchor.shape[
-                        -1]) > 0.5).float().to(device)
-                    d = 1 / (dropout_mask.mean() + 1e-6)
-                    loss_class += classif_loss(
-                        (dropout_mask * scores_anchor).mean(-1) * d,
-                        sample[3].to(device)) / 10
-                    loss_class += classif_loss(
-                        (dropout_mask * scores_pos).mean(-1) * d,
-                        sample[3].to(device)) / 10
-                # Get landmark coordinates
-                grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
-                                                torch.arange(maps.shape[3]))
-                grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
-                grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
+            for drops in range(0):
+                # dropout_mask = (torch.rand(1,1,scores_anchor.shape[-1])>np.random.rand()*0.5).float().to(device)
+                dropout_mask = (torch.rand(1, 1, scores_anchor.shape[
+                    -1]) > 0.5).float().to(device)
+                d = 1 / (dropout_mask.mean() + 1e-6)
+                loss_class += classif_loss(
+                    (dropout_mask * scores_anchor).mean(-1) * d,
+                    sample[3].to(device)) / 10
+                loss_class += classif_loss(
+                    (dropout_mask * scores_pos).mean(-1) * d,
+                    sample[3].to(device)) / 10
+            # Get landmark coordinates
+            grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
+                                            torch.arange(maps.shape[3]))
+            grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
+            grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
 
-                map_sums = maps.sum(3).sum(2).detach()
-                maps_x = grid_x * maps
-                maps_y = grid_y * maps
-                loc_x = maps_x.sum(3).sum(2) / map_sums
-                loc_y = maps_y.sum(3).sum(2) / map_sums
+            map_sums = maps.sum(3).sum(2).detach()
+            maps_x = grid_x * maps
+            maps_y = grid_y * maps
+            loc_x = maps_x.sum(3).sum(2) / map_sums
+            loc_y = maps_y.sum(3).sum(2) / map_sums
 
             # Concentration loss
             loss_conc_x = (loc_x.unsqueeze(-1).unsqueeze(-1) - grid_x) ** 2
