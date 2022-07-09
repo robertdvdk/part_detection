@@ -58,6 +58,7 @@ def train(net, train_loader, device, do_baseline, model_name,epoch):
 
         angle = np.random.randn() * 0.1
         scale = np.random.rand() * 0.2 + 0.9
+        # noinspection PyTypeChecker
         sample[0] = torchvision.transforms.functional.affine(sample[0],
                                                              angle=angle * 180 / np.pi,
                                                              translate=[0,
@@ -66,6 +67,7 @@ def train(net, train_loader, device, do_baseline, model_name,epoch):
                                                              shear=0)
         angle = np.random.randn() * 0.1
         scale = np.random.rand() * 0.2 + 0.9
+        # noinspection PyTypeChecker
         sample[1] = torchvision.transforms.functional.affine(sample[1],
                                                              angle=angle * 180 / np.pi,
                                                              translate=[0,
@@ -74,6 +76,7 @@ def train(net, train_loader, device, do_baseline, model_name,epoch):
                                                              shear=0)
         angle = np.random.randn() * 0.1
         scale = np.random.rand() * 0.2 + 0.9
+        # noinspection PyTypeChecker
         sample[2] = torchvision.transforms.functional.affine(sample[2],
                                                              angle=angle * 180 / np.pi,
                                                              translate=[0,
@@ -223,7 +226,7 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    number_epochs = 40
+    number_epochs = 1
     model_name = 'landmarks_10_nodrop_4.pt'
     model_name_init = 'landmarks_10_nodrop_4.pt'
     warm_start = False
