@@ -28,45 +28,37 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
     pbar = tqdm(total=len(train_loader), position=0, leave=True)
     iter_loader = iter(train_loader)
     for i in range(len(train_loader)):
-        # TODO modulo equal -1?
-        if i % 100 == -1:
-            train_loader.dataset.height_list[0] = np.random.randint(200,
-                                                                    300)
-            train_loader.dataset.height_list[1] = np.random.randint(200,
-                                                                    300)
-            train_loader.dataset.height_list[2] = np.random.randint(200,
-                                                                    300)
-            iter_loader = iter(train_loader)
         sample = next(iter_loader)
         with torch.no_grad():
             anchor, _, _, _ = net(sample[0].to(device))
             all_training_vectors.append(anchor.cpu())
             all_training_labels.append(sample[3])
-
-        # Flip the positive and the anchor
+        ### DATA AUGMENTATION PROCEDURES
+        # Data augmentation 1: Flip the positive and the anchor
+        # Do not use classif loss, since it would look like a different individual
         do_class = 1
         if np.random.rand() > 0.5:
             sample[0] = sample[0].flip(-1)
             sample[1] = sample[1].flip(-1)
             do_class = 0
-        # Flip the negative
+        # Data augmentation 2: Flip the negative
         if np.random.rand() > 0.5:
             sample[2] = sample[2].flip(-1)
 
-        # Substitute the negative with the flipped positive or anchor
+        # Data augmentation 3: Substitute the negative with the flipped positive or anchor
         if np.random.rand() > 0.9:
             if np.random.rand() > 0.5:
                 sample[2] = sample[0].flip(-1)
             else:
                 sample[2] = sample[1].flip(-1)
-
+        
+        # Data augmentation 4: random transform anchor, positive and negative
         angle = np.random.randn() * 0.1
         scale = np.random.rand() * 0.2 + 0.9
         # noinspection PyTypeChecker
         sample[0] = torchvision.transforms.functional.affine(sample[0],
                                                              angle=angle * 180 / np.pi,
-                                                             translate=[0,
-                                                                        0],
+                                                             translate=[0,0],
                                                              scale=scale,
                                                              shear=0)
         angle = np.random.randn() * 0.1
@@ -74,8 +66,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         # noinspection PyTypeChecker
         sample[1] = torchvision.transforms.functional.affine(sample[1],
                                                              angle=angle * 180 / np.pi,
-                                                             translate=[0,
-                                                                        0],
+                                                             translate=[0,0],
                                                              scale=scale,
                                                              shear=0)
         angle = np.random.randn() * 0.1
@@ -83,23 +74,14 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         # noinspection PyTypeChecker
         sample[2] = torchvision.transforms.functional.affine(sample[2],
                                                              angle=angle * 180 / np.pi,
-                                                             translate=[0,
-                                                                        0],
+                                                             translate=[0,0],
                                                              scale=scale,
                                                              shear=0)
 
-        anchor, maps, scores_anchor, feature_tensor = net(
-            sample[0].to(device))
+        ### FORWARD PASS OF TRIPLET
+        anchor, maps, scores_anchor, feature_tensor = net(sample[0].to(device))
         positive, _, scores_pos, _ = net(sample[1].to(device))
         negative, _, _, _ = net(sample[2].to(device))
-
-        if not do_baseline:
-            net.avg_dist_pos.data = net.avg_dist_pos.data * 0.95 + (
-                    (anchor.detach() - positive.detach()) ** 2).mean(
-                0).sum(0).sqrt() * 0.05
-            net.avg_dist_neg.data = net.avg_dist_neg.data * 0.95 + (
-                    (anchor.detach() - negative.detach()) ** 2).mean(
-                0).sum(0).sqrt() * 0.05
 
         if do_baseline:
             loss = triplet_loss(anchor, positive, negative)
@@ -111,6 +93,14 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_max = total_loss.detach() * 0
             loss_mean = total_loss.detach() * 0
         else:
+            # Keep track of average distances between postives and negatives
+            net.avg_dist_pos.data = net.avg_dist_pos.data * 0.95 + (
+                    (anchor.detach() - positive.detach()) ** 2).mean(
+                0).sum(0).sqrt() * 0.05
+            net.avg_dist_neg.data = net.avg_dist_neg.data * 0.95 + (
+                    (anchor.detach() - negative.detach()) ** 2).mean(
+                0).sum(0).sqrt() * 0.05
+            
             loss = 0  # triplet_loss((anchor).mean(2),(positive).mean(2),(negative).mean(2))
             loss_class = classif_loss(scores_anchor.mean(-1), sample[3].to(
                 device)) / 2 + classif_loss(scores_pos.mean(-1),
