@@ -1,18 +1,15 @@
 # import cv2
-from typing import Union, Any, List
-
+import os
+from typing import Union, Any, Optional, List
 
 import numpy as np
 import torch
 import torchvision
 import torchvision.transforms.functional
-from kaggle import KaggleApi
-from torch import device, Tensor
-
+from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torchvision.models import ResNet
 from tqdm import tqdm
-import os
 
 from datasets import WhaleDataset, WhaleTripletDataset
 from nets import Net, LandmarkNet
@@ -172,8 +169,6 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             running_loss_class = loss_class.item()
             # running_loss_masked_diff = loss_masked_diff.item()
         else:
-            #TODO fix "local variable 'running_loss' referenced before assignment"
-
             # noinspection PyUnboundLocalVariable
             running_loss = 0.99 * running_loss + 0.01 * loss.item()
             # noinspection PyUnboundLocalVariable
@@ -202,21 +197,19 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
     names: list[Any] = []
     topk_class: list[int] = []
     diff_to_second: list[float] = []
-    topk_lm_class: None = None
-    class_lm: None = None
+    topk_lm_class: Optional[List] = None
+    class_lm: Optional[List] = None
     all_scores: list[Any] = []
     all_labels: list[Any] = []
     for i, sample in enumerate(pbar):
         feat, maps, scores, feature_tensor = net(sample[0].to(device))
         scores = scores.detach().cpu()
         all_scores.append(scores)
-        lab: object = sample[1]
+        lab = sample[1]
         all_labels.append(lab)
 
         if do_baseline:
             for j in range(scores.shape[0]):
-                sorted_scores: object
-                sorted_indeces: object
                 sorted_scores, sorted_indeces = scores[j, :].softmax(0).sort(
                     descending=True)
                 topk_class.append(list(sorted_indeces).index(lab[j]))
@@ -254,11 +247,11 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
             grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
 
-            map_sums: object = maps.sum(3).sum(2).detach()
-            maps_x: object = grid_x * maps
-            maps_y: object = grid_y * maps
-            loc_x: object = maps_x.sum(3).sum(2) / map_sums
-            loc_y: object = maps_y.sum(3).sum(2) / map_sums
+            map_sums = maps.sum(3).sum(2).detach()
+            maps_x = grid_x * maps
+            maps_y = grid_y * maps
+            loc_x = maps_x.sum(3).sum(2) / map_sums
+            loc_y = maps_y.sum(3).sum(2) / map_sums
     pbar.close()
 
 
