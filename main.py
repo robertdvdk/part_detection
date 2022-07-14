@@ -25,6 +25,7 @@ def train(net, train_loader, device, do_baseline, model_name,epoch):
     pbar = tqdm(total=len(train_loader), position=0, leave=True)
     iter_loader = iter(train_loader)
     for i in range(len(train_loader)):
+        # TODO modulo equal -1?
         if i % 100 == -1:
             train_loader.dataset.height_list[0] = np.random.randint(200,
                                                                     300)
@@ -182,7 +183,7 @@ def train(net, train_loader, device, do_baseline, model_name,epoch):
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), model_name)
-    return net
+    return net, running_loss
 
 
 
