@@ -3,25 +3,35 @@ import os
 import numpy as np
 import pandas as pd
 # import torch
+from numpy import ndarray
+from pandas import Series, DataFrame
+from pandas.core.arrays import ExtensionArray
+from pandas.io.parsers import TextFileReader
 
 from skimage.io import imread
 from skimage.transform import resize
 import torch.utils.data
+from typing import Optional, List, Union, Any, Tuple
 
 
 class WhaleDataset(torch.utils.data.Dataset):
     """Whale dataset."""
+    labels: ndarray
+    label_ids: ndarray
+    names: ndarray
 
-    def __init__(self, data_path, mode='train', height=256, minimum_images=3,
-                 alt_data_path=None):
+    def __init__(self, data_path: str, mode: str = 'train', height: int = 256, minimum_images: int = 3,
+                 alt_data_path: Optional[str] = None) -> None:
         """
         Args:
             data_path (string): path to the dataset
             mode (string): 'train' or 'val'
         """
-        self.data_path = data_path
-        self.alt_data_path = alt_data_path
-        train_data = pd.read_csv(os.path.join(data_path, 'train.csv'))
+        self.data_path: str = data_path
+        self.alt_data_path: Optional[str] = alt_data_path
+        train_data: DataFrame = pd.read_csv(os.path.join(data_path, 'train.csv'))
+        unique_labels: ndarray
+        unique_label_counts: ndarray
         unique_labels, unique_label_counts = np.unique(train_data['Id'],
                                                        return_counts=True)
 
@@ -32,12 +42,12 @@ class WhaleDataset(torch.utils.data.Dataset):
         unique_labels = unique_labels[1:]
 
         # Create vector of labels and set ids (1 for train, 2 for test)
-        self.unique_labels = list(unique_labels)
-        labels = []
-        label_ids = []
-        setid = []
-        names = []
-        unique_labels_seen = np.zeros(len(self.unique_labels))
+        self.unique_labels: List[int] = list(unique_labels)
+        labels: list[int] = []
+        label_ids: list[Union[Union[Series, ExtensionArray, None, ndarray, DataFrame], Any]] = []
+        setid: list[int] = []
+        names: list[Union[Union[Series, ExtensionArray, None, ndarray, DataFrame], Any]] = []
+        unique_labels_seen: ndarray = np.zeros(len(self.unique_labels))
         for i in range(len(train_data)):
             if train_data['Id'][i] in self.unique_labels:
                 labels.append(self.unique_labels.index(train_data['Id'][i]))
@@ -48,7 +58,7 @@ class WhaleDataset(torch.utils.data.Dataset):
                 else:
                     setid.append(1)
                 unique_labels_seen[labels[-1]] += 1
-        self.mode = mode
+        self.mode: str = mode
         if mode == 'train':
             self.labels = np.array(labels)[np.array(setid) == 1]
             self.label_ids = np.array(label_ids)[np.array(setid) == 1]
@@ -62,21 +72,21 @@ class WhaleDataset(torch.utils.data.Dataset):
             self.labels = np.array(labels)
             self.label_ids = np.array(label_ids)
             self.names = np.array(names)
-        self.height = height
+        self.height: int = height
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.labels)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Tuple[ndarray,Any]:
         if self.alt_data_path is not None and os.path.isfile(
                 os.path.join(self.alt_data_path, self.names[idx])):
-            im = imread(os.path.join(self.alt_data_path, self.names[idx]))
+            im: ndarray = imread(os.path.join(self.alt_data_path, self.names[idx]))
             im = np.flip(im, 2)
         else:
             im = imread(
                 os.path.join(self.data_path, 'train', self.names[idx]))
         im = resize(im, (self.height * 2, self.height))
-        label = self.labels[idx]
+        label: Any = self.labels[idx]
 
         if len(im.shape) == 2:
             im = np.stack((im,) * 3, axis=-1)
@@ -89,27 +99,30 @@ class WhaleDataset(torch.utils.data.Dataset):
 class WhaleTripletDataset(torch.utils.data.Dataset):
     """Whale dataset."""
 
-    def __init__(self, orig_dataset, height_list=None):
+    def __init__(self, orig_dataset: WhaleDataset, height_list: Optional[List[int]] = None) -> None:
         """
         Args:
             orig_dataset (Dataset): dataset
         """
         if height_list is None:
             height_list = [256, 256, 256]
-        self.orig_dataset = orig_dataset
-        self.height_list = height_list
+        self.orig_dataset: WhaleDataset = orig_dataset
+        self.height_list: list[int] = height_list
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.orig_dataset)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: object) -> Tuple[ndarray,ndarray,int,Any,int]:
         self.orig_dataset.height = self.height_list[0]
+        im: ndarray
+        lab: Any
         im, lab = self.orig_dataset[idx]
-        opts = np.where(self.orig_dataset.labels == lab)[0]
-        positive_idx = opts[np.random.randint(len(opts))]
+        opts: ndarray = np.where(self.orig_dataset.labels == lab)[0]
+        positive_idx: int = opts[np.random.randint(len(opts))]
         opts = np.where(self.orig_dataset.labels != lab)[0]
-        negative_idx = opts[np.random.randint(len(opts))]
+        negative_idx: int = opts[np.random.randint(len(opts))]
         self.orig_dataset.height = self.height_list[1]
+        im_pos: ndarray
         im_pos, _ = self.orig_dataset[positive_idx]
         self.orig_dataset.height = self.height_list[2]
         im_neg, lab_neg = self.orig_dataset[negative_idx]
