@@ -102,20 +102,22 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                 0).sum(0).sqrt() * 0.05
             
             loss = 0  # triplet_loss((anchor).mean(2),(positive).mean(2),(negative).mean(2))
+            # Classification loss for anchor and positive samples
             loss_class = classif_loss(scores_anchor.mean(-1), sample[3].to(
-                device)) / 2 + classif_loss(scores_pos.mean(-1),
-                                            sample[3].to(device)) / 2
+                device)) / 2 + classif_loss(scores_pos.mean(-1), sample[3].to(device)) / 2
+            
+            # Triplet loss for each triplet of landmarks
             for lm in range(anchor.shape[2]):
                 loss += triplet_loss((anchor[:, :, lm]),
                                      (positive[:, :, lm]),
                                      (negative[:, :, lm])) / (
                             (anchor.shape[2] - 1))
                 # loss_class += (classif_loss(scores_anchor[:,:,lm],sample[3].to(device))/2 + classif_loss(scores_pos[:,:,lm],sample[3].to(device))/2)/((anchor.shape[2]-1))
-
+            
+            # Classification loss using random subsets of landmarks
             for drops in range(0):
                 # dropout_mask = (torch.rand(1,1,scores_anchor.shape[-1])>np.random.rand()*0.5).float().to(device)
-                dropout_mask = (torch.rand(1, 1, scores_anchor.shape[
-                    -1]) > 0.5).float().to(device)
+                dropout_mask = (torch.rand(1, 1, scores_anchor.shape[-1]) > 0.5).float().to(device)
                 d = 1 / (dropout_mask.mean() + 1e-6)
                 loss_class += classif_loss(
                     (dropout_mask * scores_anchor).mean(-1) * d,
