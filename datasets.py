@@ -7,13 +7,14 @@ import pandas as pd
 from skimage.io import imread
 from skimage.transform import resize
 import torch.utils.data
+from typing import Optional
 
 
 class WhaleDataset(torch.utils.data.Dataset):
     """Whale dataset."""
 
-    def __init__(self, data_path, mode='train', height=256, minimum_images=3,
-                 alt_data_path=None):
+    def __init__(self, data_path: str, mode: str='train', height: int=256, minimum_images: int=3,
+                 alt_data_path: Optional[str]=None) -> None:
         """
         Args:
             data_path (string): path to the dataset
@@ -64,7 +65,7 @@ class WhaleDataset(torch.utils.data.Dataset):
             self.names = np.array(names)
         self.height = height
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.labels)
 
     def __getitem__(self, idx):
@@ -89,7 +90,7 @@ class WhaleDataset(torch.utils.data.Dataset):
 class WhaleTripletDataset(torch.utils.data.Dataset):
     """Whale dataset."""
 
-    def __init__(self, orig_dataset, height_list=None):
+    def __init__(self, orig_dataset: WhaleDataset, height_list: None=None) -> None:
         """
         Args:
             orig_dataset (Dataset): dataset
@@ -99,7 +100,7 @@ class WhaleTripletDataset(torch.utils.data.Dataset):
         self.orig_dataset = orig_dataset
         self.height_list = height_list
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.orig_dataset)
 
     def __getitem__(self, idx):

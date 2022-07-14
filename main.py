@@ -12,7 +12,7 @@ from datasets import WhaleDataset, WhaleTripletDataset
 from nets import Net, LandmarkNet
 
 
-def train(net, train_loader, device, do_baseline, model_name,epoch):
+def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int):
     # Training
     triplet_loss = torch.nn.TripletMarginLoss(margin=1.0, p=2)
     classif_loss = torch.nn.CrossEntropyLoss()
@@ -185,88 +185,7 @@ def train(net, train_loader, device, do_baseline, model_name,epoch):
     torch.save(net.cpu().state_dict(), model_name)
     return net
 
-
-
-def main():
-    print(torch.cuda.is_available())
-    if not os.path.exists('./happyWhale'):
-        # try:
-        os.mkdir('./happyWhale')
-        from kaggle.api.kaggle_api_extended import KaggleApi
-        api = KaggleApi()
-        api.authenticate()
-        api.competition_download_files('humpback-whale-identification',
-                                       path='./happyWhale/')
-
-        import zipfile
-
-        with zipfile.ZipFile('./happyWhale/humpback-whale-identification.zip', 'r') as zipref:
-            zipref.extractall('./happyWhale/')
-        # except Exception as e:
-        #     os.rmdir('./happyWhale')
-        #     print(e)
-        #     raise RuntimeError("Unable to download Kaggle files! Please read README.md")
-
-
-    data_path = "./happyWhale"
-
-    dataset_train = WhaleDataset(data_path, mode='train')
-    dataset_val = WhaleDataset(data_path, mode='val')
-    dataset_full = WhaleDataset(data_path, mode='no_set', minimum_images=0,
-                                alt_data_path='Teds_OSM')
-    dataset_train_triplet = WhaleTripletDataset(dataset_train)
-
-    batch_size = 12
-    train_loader = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
-                                               batch_size=batch_size, shuffle=True,
-                                               num_workers=4)
-    val_loader = torch.utils.data.DataLoader(dataset=dataset_val,
-                                             batch_size=batch_size, shuffle=False,
-                                             num_workers=4)
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    number_epochs = 1
-    model_name = 'landmarks_10_nodrop_4.pt'
-    model_name_init = 'landmarks_10_nodrop_4.pt'
-    warm_start = False
-    do_only_test = True
-
-    do_baseline = False
-    num_landmarks = 10
-
-    basenet = torchvision.models.resnet18(pretrained=True)
-    if do_baseline:
-        net = Net(basenet)
-    else:
-        net = LandmarkNet(basenet, num_landmarks)
-    if warm_start:
-        net.load_state_dict(torch.load(model_name_init), strict=False)
-    net.to(device)
-
-
-
-    if do_only_test:
-        number_epochs = 1
-
-    val_accs = []
-
-    test_batch = []
-    test_batch_labels = []
-    # for id in test_list: # TODO what is test_list? -> probably list of whale ids in test set
-    #     num = list(dataset_full.names).index(id)
-    #     test_batch.append(torch.Tensor(dataset_full[num][0]).unsqueeze(0))
-    #     test_batch_labels.append(dataset_full.unique_labels[dataset_full[num][1]])
-
-
-    for epoch in range(number_epochs):
-        if not do_only_test:
-            net = train(net, train_loader, device, do_baseline, model_name,epoch)
-        # Validation
-        validation(device, do_baseline, net, val_loader)
-
-
-def validation(device, do_baseline, net, val_loader):
+def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader):
     net.eval()
     net.to(device)
     pbar = tqdm(val_loader, position=0, leave=True)
@@ -329,6 +248,84 @@ def validation(device, do_baseline, net, val_loader):
             loc_y = maps_y.sum(3).sum(2) / map_sums
     pbar.close()
 
+
+def main():
+    print(torch.cuda.is_available())
+    if not os.path.exists('./happyWhale'):
+        try:
+            os.mkdir('./happyWhale')
+            from kaggle.api.kaggle_api_extended import KaggleApi
+            api = KaggleApi()
+            api.authenticate()
+            api.competition_download_files('humpback-whale-identification',
+                                           path='./happyWhale/')
+
+            import zipfile
+
+            with zipfile.ZipFile('./happyWhale/humpback-whale-identification.zip', 'r') as zipref:
+                zipref.extractall('./happyWhale/')
+        except Exception as e:
+            os.rmdir('./happyWhale')
+            print(e)
+            raise RuntimeError("Unable to download Kaggle files! Please read README.md")
+
+
+    data_path = "./happyWhale"
+
+    dataset_train = WhaleDataset(data_path, mode='train')
+    dataset_val = WhaleDataset(data_path, mode='val')
+    dataset_full = WhaleDataset(data_path, mode='no_set', minimum_images=0,
+                                alt_data_path='Teds_OSM')
+    dataset_train_triplet = WhaleTripletDataset(dataset_train)
+
+    batch_size = 12
+    train_loader = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
+                                               batch_size=batch_size, shuffle=True,
+                                               num_workers=4)
+    val_loader = torch.utils.data.DataLoader(dataset=dataset_val,
+                                             batch_size=batch_size, shuffle=False,
+                                             num_workers=4)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    number_epochs = 1
+    model_name = 'landmarks_10_nodrop_4.pt'
+    model_name_init = 'landmarks_10_nodrop_4.pt'
+    warm_start = False
+    do_only_test = True
+
+    do_baseline = False
+    num_landmarks = 10
+
+    basenet = torchvision.models.resnet18(pretrained=True)
+    if do_baseline:
+        net = Net(basenet)
+    else:
+        net = LandmarkNet(basenet, num_landmarks)
+    if warm_start:
+        net.load_state_dict(torch.load(model_name_init), strict=False)
+    net.to(device)
+
+
+
+    if do_only_test:
+        number_epochs = 1
+
+    val_accs = []
+
+    test_batch = []
+    test_batch_labels = []
+    # for id in test_list: # TODO what is test_list? -> probably list of whale ids in test set
+    #     num = list(dataset_full.names).index(id)
+    #     test_batch.append(torch.Tensor(dataset_full[num][0]).unsqueeze(0))
+    #     test_batch_labels.append(dataset_full.unique_labels[dataset_full[num][1]])
+
+
+    for epoch in range(number_epochs):
+        if not do_only_test:
+            net = train(net, train_loader, device, do_baseline, model_name,epoch)
+        # Validation
+        validation(device, do_baseline, net, val_loader)
 
 if __name__=="__main__":
     main()

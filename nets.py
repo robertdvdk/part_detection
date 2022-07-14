@@ -1,4 +1,7 @@
 import torch
+from torch import Tensor
+from torchvision.models.resnet import ResNet
+from typing import Tuple
 
 
 class Net(torch.nn.Module):
@@ -36,7 +39,7 @@ class Net(torch.nn.Module):
 
 
 class LandmarkNet(torch.nn.Module):
-    def __init__(self, init_model, num_landmarks=8):
+    def __init__(self, init_model: ResNet, num_landmarks: int=8) -> None:
         super().__init__()
         self.conv1 = init_model.conv1
         self.bn1 = init_model.bn1
@@ -68,7 +71,7 @@ class LandmarkNet(torch.nn.Module):
         self.avg_dist_neg = torch.nn.Parameter(torch.zeros([num_landmarks]),
                                                requires_grad=False)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
