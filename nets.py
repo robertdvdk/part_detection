@@ -4,7 +4,7 @@ from torch.nn import Conv2d, BatchNorm2d, ReLU, MaxPool2d, Sequential, AdaptiveA
 from torchvision.models.resnet import ResNet
 from typing import Tuple
 
-
+# Baseline model, a modified ResNet with reduced downsampling for a spatially larger feature tensor in the last layer
 class Net(torch.nn.Module):
     def __init__(self, init_model: ResNet) -> None:
         super().__init__()
@@ -38,7 +38,7 @@ class Net(torch.nn.Module):
         y: Tensor = self.fc_class(x)
         return x, x, y, x
 
-
+# Proposed landmark-based model, also based on ResNet
 class LandmarkNet(torch.nn.Module):
 
     def __init__(self, init_model: ResNet, num_landmarks: int=8) -> None:
@@ -82,13 +82,15 @@ class LandmarkNet(torch.nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
+        # Compute per landmark attention maps
         maps: Tensor = self.fc_landmarks(x)
         maps = self.softmax(maps)
+        
+        # Use maps to get weighted average features per landmark
         x = self.fc(x)
         feature_tensor: Tensor = x
-        x = (maps[:, 0:-1, :, :].unsqueeze(-1).permute(0, 4, 2, 3,
-                                                       1) * x.unsqueeze(
-            -1)).mean(2).mean(2)
+        x = (maps[:, 0:-1, :, :].unsqueeze(-1).permute(0, 4, 2, 3,1) * x.unsqueeze(-1)).mean(2).mean(2)
+        
         # x = x * (self.landmark_mask).sigmoid()
         # new_x = []
         # for i in range(x.shape[-1]):
@@ -96,5 +98,6 @@ class LandmarkNet(torch.nn.Module):
         # x = torch.cat(new_x,2)
         # x = x.sum(2)
         # x = torch.nn.functional.normalize(x)
+        
         y: Tensor = self.fc_class(x.permute(0, 2, 1)).permute(0, 2, 1)
         return x, maps, y, feature_tensor
