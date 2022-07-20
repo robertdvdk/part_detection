@@ -15,8 +15,12 @@ from datasets import WhaleDataset, WhaleTripletDataset
 from nets import Net, LandmarkNet
 
 
-def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int):
+def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
     # Training
+    if all_losses:
+        running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class = all_losses
+    elif not all_losses and epoch != 0:
+        print('Please pass the losses of the previous epoch to the training function')
     triplet_loss = torch.nn.TripletMarginLoss(margin=1.0, p=2)
     classif_loss = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(
@@ -179,7 +183,8 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), model_name)
-    return net, running_loss
+    all_losses = running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class
+    return net, all_losses
 
 def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader):
     net.eval()
@@ -244,6 +249,7 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             maps_y = grid_y * maps
             loc_x = maps_x.sum(3).sum(2) / map_sums
             loc_y = maps_y.sum(3).sum(2) / map_sums
+    print(all_labels == top_class)
     pbar.close()
 
 
@@ -286,13 +292,13 @@ def main():
 
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    number_epochs: int = 1
+    number_epochs: int = 40
     model_name: str = 'landmarks_10_nodrop_4.pt'
     model_name_init: str = 'landmarks_10_nodrop_4.pt'
     warm_start: bool = False
     do_only_test: bool = True
 
-    do_baseline: bool = False
+    do_baseline: bool = True
     num_landmarks: int = 10
 
     basenet: ResNet = torchvision.models.resnet18(pretrained=True)
@@ -320,9 +326,13 @@ def main():
     #     test_batch_labels.append(dataset_full.unique_labels[dataset_full[num][1]])
 
 
+    all_losses = []
     for epoch in range(number_epochs):
         if not do_only_test:
-            net = train(net, train_loader, device, do_baseline, model_name,epoch)
+            if all_losses:
+                net, all_losses = train(net, train_loader, device, do_baseline, model_name,epoch, all_losses)
+            else:
+                net, all_losses = train(net, train_loader, device, do_baseline, model_name, epoch)
         # Validation
         validation(device, do_baseline, net, val_loader)
 
