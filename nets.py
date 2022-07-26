@@ -40,7 +40,6 @@ class Net(torch.nn.Module):
 
 # Proposed landmark-based model, also based on ResNet
 class LandmarkNet(torch.nn.Module):
-
     def __init__(self, init_model: ResNet, num_landmarks: int=8) -> None:
         super().__init__()
         self.conv1: Conv2d = init_model.conv1

@@ -249,7 +249,7 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             maps_y = grid_y * maps
             loc_x = maps_x.sum(3).sum(2) / map_sums
             loc_y = maps_y.sum(3).sum(2) / map_sums
-    print(all_labels == top_class)
+    print((np.array(topk_class)<5).mean())
     pbar.close()
 
 
@@ -293,12 +293,12 @@ def main():
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     number_epochs: int = 40
-    model_name: str = 'landmarks_10_nodrop_4.pt'
+    model_name: str = 'landmarks_10_nodrop_40epochs_landmarknet.pt'
     model_name_init: str = 'landmarks_10_nodrop_4.pt'
     warm_start: bool = False
-    do_only_test: bool = True
+    do_only_test: bool = False
 
-    do_baseline: bool = True
+    do_baseline: bool = False
     num_landmarks: int = 10
 
     basenet: ResNet = torchvision.models.resnet18(pretrained=True)
@@ -333,8 +333,12 @@ def main():
                 net, all_losses = train(net, train_loader, device, do_baseline, model_name,epoch, all_losses)
             else:
                 net, all_losses = train(net, train_loader, device, do_baseline, model_name, epoch)
+            print(f'Validation accuracy in epoch {epoch}:')
+            validation(device, do_baseline, net, val_loader)
         # Validation
-        validation(device, do_baseline, net, val_loader)
+        else:
+            print('Validation accuracy with saved network:')
+            validation(device, do_baseline, net, val_loader)
 
 if __name__=="__main__":
     main()
