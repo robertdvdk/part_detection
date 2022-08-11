@@ -293,8 +293,8 @@ def main():
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     number_epochs: int = 40
-    model_name: str = 'landmarks_10_nodrop_40epochs_landmarknet.pt'
-    model_name_init: str = 'landmarks_10_nodrop_4.pt'
+    model_name: str = 'testnet.pt'
+    model_name_init: str = 'test.pt'
     warm_start: bool = False
     do_only_test: bool = False
 
