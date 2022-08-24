@@ -11,6 +11,8 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.models import ResNet
 from tqdm import tqdm
 
+import matplotlib.pyplot as plt
+
 from datasets import WhaleDataset, WhaleTripletDataset
 from nets import Net, LandmarkNet
 
@@ -156,7 +158,6 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-
         if epoch == 0 and i == 0:
             running_loss = loss.item()
             running_loss_conc = loss_conc.item()
@@ -198,6 +199,7 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
     class_lm: Optional[List] = None
     all_scores: list[Any] = []
     all_labels: list[Any] = []
+    l = 0
     for i, sample in enumerate(pbar):
         feat, maps, scores, feature_tensor = net(sample[0].to(device))
         scores = scores.detach().cpu()
@@ -249,9 +251,20 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             maps_y = grid_y * maps
             loc_x = maps_x.sum(3).sum(2) / map_sums
             loc_y = maps_y.sum(3).sum(2) / map_sums
+
+            # for k in zip(sample[0], loc_x, loc_y):
+            #     img, x_coords_list, y_coords_list = k
+            #     x_coords_list = x_coords_list.cpu().detach().numpy() * 4
+            #     y_coords_list = y_coords_list.cpu().detach().numpy() * 16
+            #     plt.imshow(img.permute(1, 2, 0) * 255)
+            #     # plt.scatter(x_coords_list, y_coords_list)
+            #     plt.savefig(f'/home/robert/projects/part_detection/with_landmarks/{l}.png')
+            #     plt.close()
+            #     l += 1
+
+
     print((np.array(topk_class)<5).mean())
     pbar.close()
-
 
 def main():
     print(torch.cuda.is_available())
@@ -293,8 +306,8 @@ def main():
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     number_epochs: int = 40
-    model_name: str = 'testnet.pt'
-    model_name_init: str = 'test.pt'
+    model_name: str = 'landmarks_10_nodrop_40epochs_landmarknet_correctorientation.pt'
+    model_name_init: str = 'landmarks_10_nodrop_40epochs_landmarknet.pt'
     warm_start: bool = False
     do_only_test: bool = False
 

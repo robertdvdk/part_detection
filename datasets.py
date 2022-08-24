@@ -85,7 +85,7 @@ class WhaleDataset(torch.utils.data.Dataset):
         else:
             im = imread(
                 os.path.join(self.data_path, 'train', self.names[idx]))
-        im = resize(im, (self.height * 2, self.height))
+        im = resize(im, (self.height, self.height * 2))
         label: Any = self.labels[idx]
 
         if len(im.shape) == 2:
