@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
-from datasets import WhaleDataset, WhaleTripletDataset
+from datasets import WhaleDataset, WhaleTripletDataset, PartImageNetDataset
 from nets import Net, LandmarkNet
 
 
@@ -288,15 +288,28 @@ def main():
 
 
     data_path: str = "./happyWhale"
+    partImageNet_data_path: str = "./partImageNet"
 
-    dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
-    dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
-    dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set', minimum_images=0,
-                                alt_data_path='Teds_OSM')
-    dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
+    # dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
+    # dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
+    # dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set', minimum_images=0,
+    #                             alt_data_path='Teds_OSM')
+    # dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
+    #
+    # batch_size: int = 12
+    # train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
+    #                                            batch_size=batch_size, shuffle=True,
+    #                                            num_workers=4)
+    # val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
+    #                                          batch_size=batch_size, shuffle=False,
+    #                                          num_workers=4)
+
+
+    dataset_train: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='train')
+    dataset_val: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='val')
 
     batch_size: int = 12
-    train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
+    train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train,
                                                batch_size=batch_size, shuffle=True,
                                                num_workers=4)
     val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
