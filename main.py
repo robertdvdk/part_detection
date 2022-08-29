@@ -1,3 +1,4 @@
+# import cv2
 import os
 from typing import Union, Any, Optional, List
 
@@ -9,59 +10,17 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torchvision.models import ResNet
 from tqdm import tqdm
-import skimage
-from skimage.io import imread
-from skimage.transform import resize
+
 import matplotlib.pyplot as plt
 
-from datasets import WhaleDataset, WhaleTripletDataset
+from datasets import WhaleDataset, WhaleTripletDataset, PartImageNetDataset
 from nets import Net, LandmarkNet
-
-def landmarks_to_rgb(maps):
-
-    colors = [[0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
-
-    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
-
-    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25]]
-
-    rgb = np.zeros((maps.shape[1],maps.shape[2],3))
-
-    for m in range(maps.shape[0]):
-
-        for c in range(3):
-
-            rgb[:,:,c] += maps[m,:,:]*colors[m][c]
-
-    return rgb
-
-def show_maps(ims,maps,loc_x,loc_y):
-    ''' Plot images, attention maps and landmark centroids.
-    Args:
-    ims: Torch tensor of images, [batch,3,width_im,height_im]
-    maps: Torch tensor of attention maps, [batch, number of maps, width_map, height_map]
-    loc_x, loc_y: centroid coordinates, [batch, 0, number of maps]
-    '''
-    colors = [[0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
-    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
-    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25]]
-    fig,axs = plt.subplots(3,3)
-    i = 0
-    for ax in axs.reshape(-1):
-        if i<maps.shape[0]:
-            landmarks = landmarks_to_rgb( maps[i,0:-1,:,:].detach().cpu().numpy()) #* feature_magnitudes[i,:,:].unsqueeze(-1).detach().cpu().numpy()
-            ax.imshow(skimage.transform.resize( landmarks ,(256,512))) # + skimage.transform.resize( ims[i,:,:,:].permute(1,2,0).numpy()*255,(256,512)))
-            # ax.scatter(loc_y[i,0:-1].detach().cpu()*512/maps.shape[-1],loc_x[i,0:-1].detach().cpu()*512/maps.shape[-1],c=colors[0:loc_x.shape[1]-1],marker='x')
-        i += 1
-    plt.show()
-
 
 
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
     # Training
-    net = net.to(device)
     if all_losses:
-        running_loss, running_loss_conc, running_loss_max, running_loss_class = all_losses
+        running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class = all_losses
     elif not all_losses and epoch != 0:
         print('Please pass the losses of the previous epoch to the training function')
     triplet_loss = torch.nn.TripletMarginLoss(margin=1.0, p=2)
@@ -138,6 +97,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             total_loss = loss + 10 * loss_class * do_class
             loss_conc = total_loss.detach() * 0
             loss_max = total_loss.detach() * 0
+            loss_mean = total_loss.detach() * 0
         else:
             # Keep track of average distances between postives and negatives
             net.avg_dist_pos.data = net.avg_dist_pos.data * 0.95 + (
@@ -189,14 +149,11 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_conc = ((loss_conc_x + loss_conc_y)) * maps
             loss_conc = loss_conc[:, 0:-1, :, :].mean()
 
-            # Loss to encourage each landmark to be present (per img or batch)
-            # loss_max = maps.max(-1)[0].max(-1)[0].mean()
-            loss_max = maps.max(-1)[0].max(-1)[0].max(0)[0].mean()
+            loss_max = maps.max(-1)[0].max(-1)[0].mean()
             loss_max = 1 - loss_max
 
-            # Include or exclude landmark presence loss
-            total_loss = loss + 1 * loss_conc + 1 * loss_max + 1 * loss_class * do_class
-            # total_loss = loss + 1 * loss_conc + 0 * loss_max + 1 * loss_class * do_class
+            loss_mean = maps[:, 0:-1, :, :].mean()
+            total_loss = loss + 1 * loss_conc + 0 * loss_mean + 1 * loss_max + 1 * loss_class * do_class  # + 1*loss_masked_diff
 
         total_loss.backward()
         optimizer.step()
@@ -204,31 +161,35 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         if epoch == 0 and i == 0:
             running_loss = loss.item()
             running_loss_conc = loss_conc.item()
+            running_loss_mean = loss_mean.item()
             running_loss_max = loss_max.item()
             running_loss_class = loss_class.item()
+            # running_loss_masked_diff = loss_masked_diff.item()
         else:
             # noinspection PyUnboundLocalVariable
             running_loss = 0.99 * running_loss + 0.01 * loss.item()
             # noinspection PyUnboundLocalVariable
             running_loss_conc = 0.99 * running_loss_conc + 0.01 * loss_conc.item()
             # noinspection PyUnboundLocalVariable
+            running_loss_mean = 0.99 * running_loss_mean + 0.01 * loss_mean.item()
+            # noinspection PyUnboundLocalVariable
             running_loss_max = 0.99 * running_loss_max + 0.01 * loss_max.item()
             # noinspection PyUnboundLocalVariable
             running_loss_class = 0.99 * running_loss_class + 0.01 * loss_class.item()
-
+            # running_loss_masked_diff = 0.99*running_loss_masked_diff + 0.01*loss_masked_diff.item()
         pbar.set_description(
-            "Training loss: %f, Conc: %f, Max: %f, Class: %f" % (
-                running_loss, running_loss_conc,
+            "Training loss: %f, Conc: %f, Mean: %f, Max: %f, Class: %f" % (
+                running_loss, running_loss_conc, running_loss_mean,
                 running_loss_max, running_loss_class))
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), model_name)
-    all_losses = running_loss, running_loss_conc, running_loss_max, running_loss_class
+    all_losses = running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class
     return net, all_losses
 
 def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader):
     net.eval()
-    net = net.to(device)
+    net.to(device)
     pbar: tqdm = tqdm(val_loader, position=0, leave=True)
     top_class: list[Any] = []
     names: list[Any] = []
@@ -293,71 +254,17 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
 
             # for k in zip(sample[0], loc_x, loc_y):
             #     img, x_coords_list, y_coords_list = k
-            #     x_coords_list = x_coords_list.cpu().detach().numpy()
-            #     y_coords_list = y_coords_list.cpu().detach().numpy()
+            #     x_coords_list = x_coords_list.cpu().detach().numpy() * 4
+            #     y_coords_list = y_coords_list.cpu().detach().numpy() * 16
             #     plt.imshow(img.permute(1, 2, 0) * 255)
-            #     plt.scatter(y_coords_list*512/maps.shape[-1], x_coords_list*512/maps.shape[-1], marker='x', c=['black', 'red', 'peru', 'olive', 'orange', 'magenta', 'blue', 'green', 'cyan', 'crimson', 'indigo'])
-            #     plt.show()
-            #     # plt.savefig(f'/home/robert/projects/part_detection/occluded_results/{l}.png')
-            #     # plt.close()
+            #     # plt.scatter(x_coords_list, y_coords_list)
+            #     plt.savefig(f'/home/robert/projects/part_detection/with_landmarks/{l}.png')
+            #     plt.close()
             #     l += 1
-            #
-            # # For plotting during validation
-            # show_maps(sample[0], maps, loc_x, loc_y)
-            #
-            # annotation
-            out_x = loc_x.cpu().detach().numpy()
-            out_y = loc_y.cpu().detach().numpy()
-            # print(out_y*512/maps.shape[-1], out_x*512/maps.shape[-1])
-            x_landmarks = out_y*512/maps.shape[-1]
-            y_landmarks = out_x*512/maps.shape[-1]
 
-    print((np.array(topk_class) < 5).mean())
-    return [map.cpu().detach().numpy() for map in maps]
+
+    print((np.array(topk_class)<5).mean())
     pbar.close()
-
-def calculate_iou(im1, im2):
-    element_wise_product = im1 * im2
-    intersection = np.sum(element_wise_product)
-    union = np.sum(im1) + np.sum(im2)
-    return intersection/union
-
-def analyse_annotations(file_path, maps):
-    files = []
-    with open(f'{file_path}/raws/train.csv', 'r') as fopen:
-        for line in fopen:
-            files.append(line.split(',')[0])
-    iou = np.ndarray((10, 8))
-    for file, map in zip(files[1:], maps):
-        # Convert e.g. im_2_raw.png to im_2.png
-        file_to_open = f'{file[:-8]}.png'
-        img = imread(f'{file_path}/imgs/{file_to_open}', as_gray=True)
-        img = resize(img, (256, 512), order=0)
-        # print(np.where(img==0, 0, 1))
-        masks = [np.where(img==i, 1, 0) for i in range(0, 160, 20)]
-
-        for i, mapsmall in enumerate(map[:10]):
-            currmap = skimage.transform.resize(mapsmall, (256, 512))
-            for j, mask in enumerate(masks):
-                iou[i][j] += calculate_iou(currmap, mask)
-
-    print(iou)
-
-        # plt.imshow(tot)
-        # plt.show()
-        #
-        #
-        # # plt.imshow(map[0].cpu().detach().numpy())
-        #
-        # plt.imshow(img)
-        # plt.show()
-        # plt.imshow(np.where(img==20, 255, 0))
-        # plt.show()
-        # only work with grayscale images - 1 band
-        # IOU of attention map and hand annotations
-        # plt.imshow(img)
-        # plt.show()
-
 
 def main():
     print(torch.cuda.is_available())
@@ -379,47 +286,43 @@ def main():
             print(e)
             raise RuntimeError("Unable to download Kaggle files! Please read README.md")
 
-    # Training dataset
+
     data_path: str = "./happyWhale"
+    partImageNet_data_path: str = "./partImageNet"
+
     # dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
     # dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
-
-    # Occlusion dataset
-    occl_path: str = "./occlusion"
-    # dataset_train: WhaleDataset = WhaleDataset(occl_path, mode='train')
-    # dataset_val: WhaleDataset = WhaleDataset(occl_path, mode='val')
-
-    # Needed for normal training
-    # dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set',
-    #                                           minimum_images=0,
-    #                                           alt_data_path='Teds_OSM')
+    # dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set', minimum_images=0,
+    #                             alt_data_path='Teds_OSM')
+    # dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
     #
-    # dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(
-    #     dataset_train)
-    # train_loader: DataLoader[Any] = torch.utils.data.DataLoader(
-    #     dataset=dataset_train_triplet,
-    #     batch_size=batch_size, shuffle=True,
-    #     num_workers=4)
+    # batch_size: int = 12
+    # train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
+    #                                            batch_size=batch_size, shuffle=True,
+    #                                            num_workers=4)
+    # val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
+    #                                          batch_size=batch_size, shuffle=False,
+    #                                          num_workers=4)
 
 
-    # Annotated dataset
-    annot_path: str = "./annotated/raws"
-    dataset_val: WhaleDataset = WhaleDataset(annot_path, mode='val', annotated=True)
+    dataset_train: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='train')
+    dataset_val: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='val')
 
     batch_size: int = 12
-
-
+    train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train,
+                                               batch_size=batch_size, shuffle=True,
+                                               num_workers=4)
     val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
                                              batch_size=batch_size, shuffle=False,
                                              num_workers=4)
 
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    number_epochs: int = 50
-    model_name: str = 'test.pt'
-    model_name_init: str = 'landmarks_10_nodrop_120epochs_landmarknet_correctorientation.pt'
-    warm_start: bool = True
-    do_only_test: bool = True
+    number_epochs: int = 40
+    model_name: str = 'landmarks_10_nodrop_40epochs_landmarknet_correctorientation.pt'
+    model_name_init: str = 'landmarks_10_nodrop_40epochs_landmarknet.pt'
+    warm_start: bool = False
+    do_only_test: bool = False
 
     do_baseline: bool = False
     num_landmarks: int = 10
@@ -432,6 +335,7 @@ def main():
         net = LandmarkNet(basenet, num_landmarks)
     if warm_start:
         net.load_state_dict(torch.load(model_name_init), strict=False)
+    net.to(device)
 
 
 
@@ -455,15 +359,12 @@ def main():
                 net, all_losses = train(net, train_loader, device, do_baseline, model_name,epoch, all_losses)
             else:
                 net, all_losses = train(net, train_loader, device, do_baseline, model_name, epoch)
-            if (epoch - 9) % 10 == 0:
-                print(f'Validation accuracy in epoch {epoch}:')
-                validation(device, do_baseline, net, val_loader)
+            print(f'Validation accuracy in epoch {epoch}:')
+            validation(device, do_baseline, net, val_loader)
         # Validation
         else:
             print('Validation accuracy with saved network:')
-            maps = validation(device, do_baseline, net, val_loader)
-            #
-    analyse_annotations('./annotated', maps)
+            validation(device, do_baseline, net, val_loader)
 
 if __name__=="__main__":
     main()
