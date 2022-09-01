@@ -152,7 +152,7 @@ class WhaleTripletDataset(torch.utils.data.Dataset):
 class PartImageNetDataset(torch.utils.data.Dataset):
     """PartImageNet dataset"""
 
-    def __init__(self, data_path: str, mode: str = 'train', minimum_images: int = 3,
+    def __init__(self, data_path: str, mode: str = 'train', height: int = 256, minimum_images: int = 3,
                  alt_data_path: Optional[str] = None) -> None:
         """
         Args:
@@ -183,13 +183,14 @@ class PartImageNetDataset(torch.utils.data.Dataset):
             supercat=supercats[0]
             coco.imgToLabels[id] = supercat
 
-        self.label_ids = [y[1] for y in sorted(coco.imgToLabels.items(),key = lambda x: x[0])]
-        self.labels = [self.unique_label_names.index(x) for x in self.label_ids]
+        self.label_ids = np.array([y[1] for y in sorted(coco.imgToLabels.items(),key = lambda x: x[0])])
+        self.labels = np.array([self.unique_label_names.index(x) for x in self.label_ids])
         # self.label_ids = list(range(len(self.labels)))
         # self.unique_labels=list(set(self.labels))
 
-
+        self.height: int = height
         print("done creating labels")
+
 
     def debug_readout(self):
         coco=self.coco
@@ -282,14 +283,17 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         large_size = im.shape[largest_dim]
         small_size = im.shape[other_dim]
 
-        crops = [(0,0),(0,0),(0,0)]
+        if len(im.shape)==3:
+            crops = [(0,0),(0,0),(0,0)]
+        else:
+            crops=[(0,0),(0,0)]
         crops[largest_dim]=((large_size-small_size)//2,-(-(large_size-small_size)//2))
 
 
-
+        # print(im.shape)
         im = crop(im,crops)
 
-        im = resize(im, (250,250), anti_aliasing=True)
+        im = resize(im, (self.height,self.height), anti_aliasing=True)
 
         # if self.alt_data_path is not None and os.path.isfile(
         #         os.path.join(self.alt_data_path, self.names[idx])):
