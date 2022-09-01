@@ -252,15 +252,17 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             loc_x = maps_x.sum(3).sum(2) / map_sums
             loc_y = maps_y.sum(3).sum(2) / map_sums
 
-            # for k in zip(sample[0], loc_x, loc_y):
-            #     img, x_coords_list, y_coords_list = k
-            #     x_coords_list = x_coords_list.cpu().detach().numpy() * 4
-            #     y_coords_list = y_coords_list.cpu().detach().numpy() * 16
-            #     plt.imshow(img.permute(1, 2, 0) * 255)
-            #     # plt.scatter(x_coords_list, y_coords_list)
-            #     plt.savefig(f'/home/robert/projects/part_detection/with_landmarks/{l}.png')
-            #     plt.close()
-            #     l += 1
+            for k in zip(sample[0], loc_x, loc_y):
+                img, x_coords_list, y_coords_list = k
+                x_coords_list = x_coords_list.cpu().detach().numpy()
+                y_coords_list = y_coords_list.cpu().detach().numpy()
+                plt.imshow(img.permute(1, 2, 0) * 255)
+                print(maps.shape[-1])
+                plt.scatter(y_coords_list*512/maps.shape[-1], x_coords_list*512/maps.shape[-1], marker='x')
+                plt.show()
+                # plt.savefig(f'/home/robert/projects/part_detection/with_landmarks/{l}.png')
+                # plt.close()
+                l += 1
 
 
     print((np.array(topk_class)<5).mean())
@@ -306,10 +308,10 @@ def main():
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     number_epochs: int = 40
-    model_name: str = 'landmarks_10_nodrop_40epochs_landmarknet_correctorientation.pt'
-    model_name_init: str = 'landmarks_10_nodrop_40epochs_landmarknet.pt'
-    warm_start: bool = False
-    do_only_test: bool = False
+    model_name: str = 'abc.pt'
+    model_name_init: str = 'landmarks_10_nodrop_40epochs_landmarknet_correctorientation.pt'
+    warm_start: bool = True
+    do_only_test: bool = True
 
     do_baseline: bool = False
     num_landmarks: int = 10
