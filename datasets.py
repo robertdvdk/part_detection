@@ -134,14 +134,15 @@ class WhaleTripletDataset(torch.utils.data.Dataset):
         return im, im_pos, im_neg, lab, lab_neg
 
 
-def prep_json(train_json):
-    for i,image in enumerate(train_json['images']):
-        pass
-        image['annotations'] = []
 
-    for i,annotation in enumerate(train_json['annotations']):
-        image_id = annotation['image_id']
-        train_json['images'][image_id]['annotations'].append(annotation)
+# def prep_json(train_json):
+#     for i,image in enumerate(train_json['images']):
+#         pass
+#         image['annotations'] = []
+#
+#     for i,annotation in enumerate(train_json['annotations']):
+#         image_id = annotation['image_id']
+#         train_json['images'][image_id]['annotations'].append(annotation)
 
 
 
@@ -272,6 +273,7 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         filename = os.path.join(self.data_path,"train",img_filename_prefix,img['file_name'])
 
         im = imread(filename)
+        # TODO crop middle and resize to 300x300
         # if self.alt_data_path is not None and os.path.isfile(
         #         os.path.join(self.alt_data_path, self.names[idx])):
         #     im: ndarray = imread(os.path.join(self.alt_data_path, self.names[idx]))
@@ -288,6 +290,20 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         im = np.float32(np.transpose(im, axes=(2, 0, 1))) / 255
 
         return im, label
+
+
+class PartImageNetTripletDataset(WhaleTripletDataset):
+    """Whale dataset."""
+
+    def __init__(self, orig_dataset: PartImageNetDataset, height_list: Optional[List[int]] = None) -> None:
+        """
+        Args:
+            orig_dataset (Dataset): dataset
+        """
+        if height_list is None:
+            height_list = [300, 300, 300]
+        super().__init__(orig_dataset, height_list)
+
 
 if __name__=='__main__':
     # whaleset = WhaleDataset("")
@@ -307,4 +323,3 @@ if __name__=='__main__':
                                              num_workers=4)
 
     party = PartImageNetDataset("/Users/freek/Downloads/drive-download-20220825T082239Z-001",mode='train')
-    # TODO triplet dataset?
