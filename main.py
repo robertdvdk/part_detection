@@ -13,9 +13,11 @@ from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
-from datasets import WhaleDataset, WhaleTripletDataset, PartImageNetDataset
+from datasets import WhaleDataset, WhaleTripletDataset, PartImageNetDataset, PartImageNetTripletDataset
 from nets import Net, LandmarkNet
 
+
+PARTIMAGENET = True
 
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
     # Training
@@ -290,31 +292,32 @@ def main():
     data_path: str = "./happyWhale"
     partImageNet_data_path: str = "./partImageNet"
 
-    # dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
-    # dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
-    # dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set', minimum_images=0,
-    #                             alt_data_path='Teds_OSM')
-    # dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
-    #
-    # batch_size: int = 12
-    # train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
-    #                                            batch_size=batch_size, shuffle=True,
-    #                                            num_workers=4)
-    # val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
-    #                                          batch_size=batch_size, shuffle=False,
-    #                                          num_workers=4)
+    if not PARTIMAGENET:
+        dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
+        dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
+        dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set', minimum_images=0,
+                                    alt_data_path='Teds_OSM')
+        dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
 
+        batch_size: int = 12
+        train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
+                                                   batch_size=batch_size, shuffle=True,
+                                                   num_workers=4)
+        val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
+                                                 batch_size=batch_size, shuffle=False,
+                                                 num_workers=4)
+    else:
+        dataset_train: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='train')
+        dataset_val: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='val')
+        dataset_train_triplet: PartImageNetTripletDataset = PartImageNetTripletDataset(dataset_train)
 
-    dataset_train: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='train')
-    dataset_val: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='val')
-
-    batch_size: int = 12
-    train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train,
-                                               batch_size=batch_size, shuffle=True,
-                                               num_workers=4)
-    val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
-                                             batch_size=batch_size, shuffle=False,
-                                             num_workers=4)
+        batch_size: int = 12
+        train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
+                                                   batch_size=batch_size, shuffle=True,
+                                                   num_workers=4)
+        val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
+                                                 batch_size=batch_size, shuffle=False,
+                                                 num_workers=4)
 
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
