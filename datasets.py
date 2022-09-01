@@ -17,6 +17,9 @@ from pycocotools.coco import COCO
 import matplotlib.pyplot as plt
 import skimage.io as io
 from torch.utils.data import DataLoader
+from skimage.util import crop
+from skimage.transform import resize
+
 
 class WhaleDataset(torch.utils.data.Dataset):
     """Whale dataset."""
@@ -272,7 +275,21 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         filename = os.path.join(self.data_path,"train",img_filename_prefix,img['file_name'])
 
         im = imread(filename)
-        # TODO crop middle and resize to 300x300
+
+        largest_dim = np.argmax(im.shape[0:2])
+        other_dim=1-largest_dim
+        large_size = im.shape[largest_dim]
+        small_size = im.shape[other_dim]
+
+        crops = [(0,0),(0,0),(0,0)]
+        crops[largest_dim]=((large_size-small_size)//2,-(-(large_size-small_size)//2))
+
+
+
+        im = crop(im,crops)
+
+        im = resize(im, (250,250), anti_aliasing=True)
+
         # if self.alt_data_path is not None and os.path.isfile(
         #         os.path.join(self.alt_data_path, self.names[idx])):
         #     im: ndarray = imread(os.path.join(self.alt_data_path, self.names[idx]))
@@ -299,8 +316,6 @@ class PartImageNetTripletDataset(WhaleTripletDataset):
         Args:
             orig_dataset (Dataset): dataset
         """
-        if height_list is None:
-            height_list = [300, 300, 300]
         super().__init__(orig_dataset, height_list)
 
 
@@ -322,3 +337,5 @@ if __name__=='__main__':
                                              num_workers=4)
 
     party = PartImageNetDataset("/Users/freek/Downloads/drive-download-20220825T082239Z-001",mode='train')
+    a = party[0]
+    print(a)
