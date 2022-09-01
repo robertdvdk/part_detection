@@ -267,7 +267,7 @@ class PartImageNetDataset(torch.utils.data.Dataset):
     #     self.height: int = height
     #
     def __len__(self) -> int:
-        return len(self.coco.imgs)
+        return len(self.labels)
 
     def __getitem__(self, idx: int) -> Tuple[ndarray,Any]:
         img = self.coco.loadImgs([idx])[0]
