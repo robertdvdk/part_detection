@@ -158,6 +158,7 @@ class PartImageNetDataset(torch.utils.data.Dataset):
             data_path (string): path to the dataset
             mode (string): 'train' or 'val'
         """
+        self.mode = mode
         self.data_path: str = data_path
         self.alt_data_path: Optional[str] = alt_data_path
 
@@ -210,7 +211,7 @@ class PartImageNetDataset(torch.utils.data.Dataset):
 
         img_filename = img['file_name']
         img_filename_prefix = img_filename.split("_")[0]
-        filename = os.path.join(self.data_path,"train",img_filename_prefix,img['file_name'])
+        filename = os.path.join(self.data_path,self.mode,img_filename_prefix,img['file_name'])
 
         I = imread(filename)
         plt.axis('off')
@@ -273,7 +274,7 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         img = self.coco.loadImgs([idx])[0]
         img_filename = img['file_name']
         img_filename_prefix = img_filename.split("_")[0]
-        filename = os.path.join(self.data_path,"train",img_filename_prefix,img['file_name'])
+        filename = os.path.join(self.data_path,self.mode,img_filename_prefix,img['file_name'])
 
         im = imread(filename)
 
