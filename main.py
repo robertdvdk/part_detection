@@ -10,11 +10,50 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader
 from torchvision.models import ResNet
 from tqdm import tqdm
-
+import skimage
 import matplotlib.pyplot as plt
 
 from datasets import WhaleDataset, WhaleTripletDataset
 from nets import Net, LandmarkNet
+
+def landmarks_to_rgb(maps):
+
+    colors = [[0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
+
+    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
+
+    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25]]
+
+    rgb = np.zeros((maps.shape[1],maps.shape[2],3))
+
+    for m in range(maps.shape[0]):
+
+        for c in range(3):
+
+            rgb[:,:,c] += maps[m,:,:]*colors[m][c]
+
+    return rgb
+
+def show_maps(ims,maps,loc_x,loc_y):
+    ''' Plot images, attention maps and landmark centroids.
+    Args:
+    ims: Torch tensor of images, [batch,3,width_im,height_im]
+    maps: Torch tensor of attention maps, [batch, number of maps, width_map, height_map]
+    loc_x, loc_y: centroid coordinates, [batch, 0, number of maps]
+    '''
+    colors = [[0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
+    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
+    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25]]
+    fig,axs = plt.subplots(3,3)
+    i = 0
+    for ax in axs.reshape(-1):
+        if i<maps.shape[0]:
+            landmarks = landmarks_to_rgb( maps[i,0:-1,:,:].detach().cpu().numpy()) #* feature_magnitudes[i,:,:].unsqueeze(-1).detach().cpu().numpy()
+            ax.imshow(skimage.transform.resize( landmarks ,(256,512)) + skimage.transform.resize( ims[i,:,:,:].permute(1,2,0).numpy()*255,(256,512)))
+            ax.scatter(loc_y[i,0:-1].detach().cpu()*512/maps.shape[-1],loc_x[i,0:-1].detach().cpu()*512/maps.shape[-1],c=colors[0:loc_x.shape[1]-1],marker='x')
+        i += 1
+    plt.show()
+
 
 
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
@@ -153,7 +192,8 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_max = 1 - loss_max
 
             loss_mean = maps[:, 0:-1, :, :].mean()
-            total_loss = loss + 1 * loss_conc + 0 * loss_mean + 1 * loss_max + 1 * loss_class * do_class  # + 1*loss_masked_diff
+            # total_loss = loss + 1 * loss_conc + 0 * loss_mean + 1 * loss_max + 1 * loss_class * do_class  # + 1*loss_masked_diff
+            total_loss = loss + 1 * loss_conc + 0 * loss_mean + 0 * loss_max + 1 * loss_class * do_class  # + 1*loss_masked_diff
 
         total_loss.backward()
         optimizer.step()
@@ -252,17 +292,18 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             loc_x = maps_x.sum(3).sum(2) / map_sums
             loc_y = maps_y.sum(3).sum(2) / map_sums
 
-            for k in zip(sample[0], loc_x, loc_y):
-                img, x_coords_list, y_coords_list = k
-                x_coords_list = x_coords_list.cpu().detach().numpy()
-                y_coords_list = y_coords_list.cpu().detach().numpy()
-                plt.imshow(img.permute(1, 2, 0) * 255)
-                print(maps.shape[-1])
-                plt.scatter(y_coords_list*512/maps.shape[-1], x_coords_list*512/maps.shape[-1], marker='x')
-                plt.show()
-                # plt.savefig(f'/home/robert/projects/part_detection/with_landmarks/{l}.png')
-                # plt.close()
-                l += 1
+            # for k in zip(sample[0], loc_x, loc_y):
+            #     img, x_coords_list, y_coords_list = k
+            #     x_coords_list = x_coords_list.cpu().detach().numpy()
+            #     y_coords_list = y_coords_list.cpu().detach().numpy()
+            #     plt.imshow(img.permute(1, 2, 0) * 255)
+            #     plt.scatter(y_coords_list*512/maps.shape[-1], x_coords_list*512/maps.shape[-1], marker='x', c=['black', 'red', 'peru', 'olive', 'orange', 'magenta', 'blue', 'green', 'cyan', 'crimson', 'indigo'])
+            #     plt.show()
+            #     # plt.savefig(f'/home/robert/projects/part_detection/occluded_results/{l}.png')
+            #     # plt.close()
+            #     l += 1
+            show_maps(sample[0], maps, loc_x, loc_y)
+
 
 
     print((np.array(topk_class)<5).mean())
@@ -290,9 +331,12 @@ def main():
 
 
     data_path: str = "./happyWhale"
+    val_path: str = "./occlusion"
 
     dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
     dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
+    # dataset_train: WhaleDataset = WhaleDataset(val_path, mode='train')
+    # dataset_val: WhaleDataset = WhaleDataset(val_path, mode='val')
     dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set', minimum_images=0,
                                 alt_data_path='Teds_OSM')
     dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
@@ -308,8 +352,8 @@ def main():
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     number_epochs: int = 40
-    model_name: str = 'abc.pt'
-    model_name_init: str = 'landmarks_10_nodrop_40epochs_landmarknet_correctorientation.pt'
+    model_name: str = 'throwaway.pt'
+    model_name_init: str = 'without_landmarkloss.pt'
     warm_start: bool = True
     do_only_test: bool = True
 
