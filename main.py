@@ -299,7 +299,9 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             #     # plt.savefig(f'/home/robert/projects/part_detection/occluded_results/{l}.png')
             #     # plt.close()
             #     l += 1
-            show_maps(sample[0], maps, loc_x, loc_y)
+
+            # For plotting during validation
+            # show_maps(sample[0], maps, loc_x, loc_y)
 
 
 
@@ -393,8 +395,9 @@ def main():
                 net, all_losses = train(net, train_loader, device, do_baseline, model_name,epoch, all_losses)
             else:
                 net, all_losses = train(net, train_loader, device, do_baseline, model_name, epoch)
-            print(f'Validation accuracy in epoch {epoch}:')
-            validation(device, do_baseline, net, val_loader)
+            if (epoch - 9) % 10 == 0:
+                print(f'Validation accuracy in epoch {epoch}:')
+                validation(device, do_baseline, net, val_loader)
         # Validation
         else:
             print('Validation accuracy with saved network:')
