@@ -59,7 +59,7 @@ def show_maps(ims,maps,loc_x,loc_y):
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
     # Training
     if all_losses:
-        running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class = all_losses
+        running_loss, running_loss_conc, running_loss_max, running_loss_class = all_losses
     elif not all_losses and epoch != 0:
         print('Please pass the losses of the previous epoch to the training function')
     triplet_loss = torch.nn.TripletMarginLoss(margin=1.0, p=2)
@@ -136,7 +136,6 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             total_loss = loss + 10 * loss_class * do_class
             loss_conc = total_loss.detach() * 0
             loss_max = total_loss.detach() * 0
-            loss_mean = total_loss.detach() * 0
         else:
             # Keep track of average distances between postives and negatives
             net.avg_dist_pos.data = net.avg_dist_pos.data * 0.95 + (
@@ -188,12 +187,14 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_conc = ((loss_conc_x + loss_conc_y)) * maps
             loss_conc = loss_conc[:, 0:-1, :, :].mean()
 
+            # Loss to encourage each landmark to be present (per batch or img)
             loss_max = maps.max(-1)[0].max(-1)[0].mean()
+            # loss_max = maps.max(-1)[0].max(-1)[0].max(0)[0].mean()
             loss_max = 1 - loss_max
 
-            loss_mean = maps[:, 0:-1, :, :].mean()
-            # total_loss = loss + 1 * loss_conc + 0 * loss_mean + 1 * loss_max + 1 * loss_class * do_class  # + 1*loss_masked_diff
-            total_loss = loss + 1 * loss_conc + 0 * loss_mean + 0 * loss_max + 1 * loss_class * do_class  # + 1*loss_masked_diff
+            # Include or exclude landmark presence loss
+            total_loss = loss + 1 * loss_conc + 1 * loss_max + 1 * loss_class * do_class
+            # total_loss = loss + 1 * loss_conc + 0 * loss_max + 1 * loss_class * do_class
 
         total_loss.backward()
         optimizer.step()
@@ -201,30 +202,26 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         if epoch == 0 and i == 0:
             running_loss = loss.item()
             running_loss_conc = loss_conc.item()
-            running_loss_mean = loss_mean.item()
             running_loss_max = loss_max.item()
             running_loss_class = loss_class.item()
-            # running_loss_masked_diff = loss_masked_diff.item()
         else:
             # noinspection PyUnboundLocalVariable
             running_loss = 0.99 * running_loss + 0.01 * loss.item()
             # noinspection PyUnboundLocalVariable
             running_loss_conc = 0.99 * running_loss_conc + 0.01 * loss_conc.item()
             # noinspection PyUnboundLocalVariable
-            running_loss_mean = 0.99 * running_loss_mean + 0.01 * loss_mean.item()
-            # noinspection PyUnboundLocalVariable
             running_loss_max = 0.99 * running_loss_max + 0.01 * loss_max.item()
             # noinspection PyUnboundLocalVariable
             running_loss_class = 0.99 * running_loss_class + 0.01 * loss_class.item()
-            # running_loss_masked_diff = 0.99*running_loss_masked_diff + 0.01*loss_masked_diff.item()
+
         pbar.set_description(
-            "Training loss: %f, Conc: %f, Mean: %f, Max: %f, Class: %f" % (
-                running_loss, running_loss_conc, running_loss_mean,
+            "Training loss: %f, Conc: %f, Max: %f, Class: %f" % (
+                running_loss, running_loss_conc,
                 running_loss_max, running_loss_class))
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), model_name)
-    all_losses = running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class
+    all_losses = running_loss, running_loss_conc, running_loss_max, running_loss_class
     return net, all_losses
 
 def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader):
@@ -333,10 +330,14 @@ def main():
     data_path: str = "./happyWhale"
     val_path: str = "./occlusion"
 
+    # Training dataset
     dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
     dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
+
+    # Occlusion dataset
     # dataset_train: WhaleDataset = WhaleDataset(val_path, mode='train')
     # dataset_val: WhaleDataset = WhaleDataset(val_path, mode='val')
+
     dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set', minimum_images=0,
                                 alt_data_path='Teds_OSM')
     dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
@@ -352,10 +353,10 @@ def main():
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     number_epochs: int = 40
-    model_name: str = 'throwaway.pt'
-    model_name_init: str = 'without_landmarkloss.pt'
+    model_name: str = 'landmarks_10_nodrop_80epochs_landmarknet_correctorientation.pt'
+    model_name_init: str = 'landmarks_10_nodrop_40epochs_landmarknet_correctorientation.pt'
     warm_start: bool = True
-    do_only_test: bool = True
+    do_only_test: bool = False
 
     do_baseline: bool = False
     num_landmarks: int = 10
