@@ -1,4 +1,3 @@
-# import cv2
 import os
 from typing import Union, Any, Optional, List
 
@@ -11,6 +10,8 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.models import ResNet
 from tqdm import tqdm
 import skimage
+from skimage.io import imread
+from skimage.transform import resize
 import matplotlib.pyplot as plt
 
 from datasets import WhaleDataset, WhaleTripletDataset
@@ -49,8 +50,8 @@ def show_maps(ims,maps,loc_x,loc_y):
     for ax in axs.reshape(-1):
         if i<maps.shape[0]:
             landmarks = landmarks_to_rgb( maps[i,0:-1,:,:].detach().cpu().numpy()) #* feature_magnitudes[i,:,:].unsqueeze(-1).detach().cpu().numpy()
-            ax.imshow(skimage.transform.resize( landmarks ,(256,512)) + skimage.transform.resize( ims[i,:,:,:].permute(1,2,0).numpy()*255,(256,512)))
-            ax.scatter(loc_y[i,0:-1].detach().cpu()*512/maps.shape[-1],loc_x[i,0:-1].detach().cpu()*512/maps.shape[-1],c=colors[0:loc_x.shape[1]-1],marker='x')
+            ax.imshow(skimage.transform.resize( landmarks ,(256,512))) # + skimage.transform.resize( ims[i,:,:,:].permute(1,2,0).numpy()*255,(256,512)))
+            # ax.scatter(loc_y[i,0:-1].detach().cpu()*512/maps.shape[-1],loc_x[i,0:-1].detach().cpu()*512/maps.shape[-1],c=colors[0:loc_x.shape[1]-1],marker='x')
         i += 1
     plt.show()
 
@@ -58,6 +59,7 @@ def show_maps(ims,maps,loc_x,loc_y):
 
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
     # Training
+    net = net.to(device)
     if all_losses:
         running_loss, running_loss_conc, running_loss_max, running_loss_class = all_losses
     elif not all_losses and epoch != 0:
@@ -187,9 +189,9 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_conc = ((loss_conc_x + loss_conc_y)) * maps
             loss_conc = loss_conc[:, 0:-1, :, :].mean()
 
-            # Loss to encourage each landmark to be present (per batch or img)
-            loss_max = maps.max(-1)[0].max(-1)[0].mean()
-            # loss_max = maps.max(-1)[0].max(-1)[0].max(0)[0].mean()
+            # Loss to encourage each landmark to be present (per img or batch)
+            # loss_max = maps.max(-1)[0].max(-1)[0].mean()
+            loss_max = maps.max(-1)[0].max(-1)[0].max(0)[0].mean()
             loss_max = 1 - loss_max
 
             # Include or exclude landmark presence loss
@@ -226,7 +228,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
 
 def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader):
     net.eval()
-    net.to(device)
+    net = net.to(device)
     pbar: tqdm = tqdm(val_loader, position=0, leave=True)
     top_class: list[Any] = []
     names: list[Any] = []
@@ -299,14 +301,63 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             #     # plt.savefig(f'/home/robert/projects/part_detection/occluded_results/{l}.png')
             #     # plt.close()
             #     l += 1
-
-            # For plotting during validation
+            #
+            # # For plotting during validation
             # show_maps(sample[0], maps, loc_x, loc_y)
+            #
+            # annotation
+            out_x = loc_x.cpu().detach().numpy()
+            out_y = loc_y.cpu().detach().numpy()
+            # print(out_y*512/maps.shape[-1], out_x*512/maps.shape[-1])
+            x_landmarks = out_y*512/maps.shape[-1]
+            y_landmarks = out_x*512/maps.shape[-1]
 
-
-
-    print((np.array(topk_class)<5).mean())
+    print((np.array(topk_class) < 5).mean())
+    return [map.cpu().detach().numpy() for map in maps]
     pbar.close()
+
+def calculate_iou(im1, im2):
+    element_wise_product = im1 * im2
+    intersection = np.sum(element_wise_product)
+    union = np.sum(im1) + np.sum(im2)
+    return intersection/union
+
+def analyse_annotations(file_path, maps):
+    files = []
+    with open(f'{file_path}/raws/train.csv', 'r') as fopen:
+        for line in fopen:
+            files.append(line.split(',')[0])
+    iou = np.ndarray((10, 8))
+    for file, map in zip(files[1:], maps):
+        # Convert e.g. im_2_raw.png to im_2.png
+        file_to_open = f'{file[:-8]}.png'
+        img = imread(f'{file_path}/imgs/{file_to_open}', as_gray=True)
+        img = resize(img, (256, 512), order=0)
+        # print(np.where(img==0, 0, 1))
+        masks = [np.where(img==i, 1, 0) for i in range(0, 160, 20)]
+
+        for i, mapsmall in enumerate(map[:10]):
+            currmap = skimage.transform.resize(mapsmall, (256, 512))
+            for j, mask in enumerate(masks):
+                iou[i][j] += calculate_iou(currmap, mask)
+
+    print(iou)
+
+        # plt.imshow(tot)
+        # plt.show()
+        #
+        #
+        # # plt.imshow(map[0].cpu().detach().numpy())
+        #
+        # plt.imshow(img)
+        # plt.show()
+        # plt.imshow(np.where(img==20, 255, 0))
+        # plt.show()
+        # only work with grayscale images - 1 band
+        # IOU of attention map and hand annotations
+        # plt.imshow(img)
+        # plt.show()
+
 
 def main():
     print(torch.cuda.is_available())
@@ -328,37 +379,47 @@ def main():
             print(e)
             raise RuntimeError("Unable to download Kaggle files! Please read README.md")
 
-
-    data_path: str = "./happyWhale"
-    val_path: str = "./occlusion"
-
     # Training dataset
-    dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
-    dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
+    data_path: str = "./happyWhale"
+    # dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
+    # dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
 
     # Occlusion dataset
-    # dataset_train: WhaleDataset = WhaleDataset(val_path, mode='train')
-    # dataset_val: WhaleDataset = WhaleDataset(val_path, mode='val')
+    occl_path: str = "./occlusion"
+    # dataset_train: WhaleDataset = WhaleDataset(occl_path, mode='train')
+    # dataset_val: WhaleDataset = WhaleDataset(occl_path, mode='val')
 
-    dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set', minimum_images=0,
-                                alt_data_path='Teds_OSM')
-    dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
+    # Needed for normal training
+    # dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set',
+    #                                           minimum_images=0,
+    #                                           alt_data_path='Teds_OSM')
+    #
+    # dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(
+    #     dataset_train)
+    # train_loader: DataLoader[Any] = torch.utils.data.DataLoader(
+    #     dataset=dataset_train_triplet,
+    #     batch_size=batch_size, shuffle=True,
+    #     num_workers=4)
+
+
+    # Annotated dataset
+    annot_path: str = "./annotated/raws"
+    dataset_val: WhaleDataset = WhaleDataset(annot_path, mode='val', annotated=True)
 
     batch_size: int = 12
-    train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
-                                               batch_size=batch_size, shuffle=True,
-                                               num_workers=4)
+
+
     val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
                                              batch_size=batch_size, shuffle=False,
                                              num_workers=4)
 
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    number_epochs: int = 40
-    model_name: str = 'landmarks_10_nodrop_80epochs_landmarknet_correctorientation.pt'
-    model_name_init: str = 'landmarks_10_nodrop_40epochs_landmarknet_correctorientation.pt'
+    number_epochs: int = 50
+    model_name: str = 'test.pt'
+    model_name_init: str = 'landmarks_10_nodrop_120epochs_landmarknet_correctorientation.pt'
     warm_start: bool = True
-    do_only_test: bool = False
+    do_only_test: bool = True
 
     do_baseline: bool = False
     num_landmarks: int = 10
@@ -371,7 +432,6 @@ def main():
         net = LandmarkNet(basenet, num_landmarks)
     if warm_start:
         net.load_state_dict(torch.load(model_name_init), strict=False)
-    net.to(device)
 
 
 
@@ -401,7 +461,9 @@ def main():
         # Validation
         else:
             print('Validation accuracy with saved network:')
-            validation(device, do_baseline, net, val_loader)
+            maps = validation(device, do_baseline, net, val_loader)
+            #
+    analyse_annotations('./annotated', maps)
 
 if __name__=="__main__":
     main()
