@@ -22,7 +22,7 @@ from nets import Net, LandmarkNet
 # to avoid error "too many files open"
 torch.multiprocessing.set_sharing_strategy('file_system')
 
-experiment = "cub_orth_equiv"
+experiment = "cub_orthdiv25_equivmult50"
 
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
