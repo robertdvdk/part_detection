@@ -42,6 +42,7 @@ class Net(torch.nn.Module):
 class LandmarkNet(torch.nn.Module):
     def __init__(self, init_model: ResNet, num_landmarks: int=8) -> None:
         super().__init__()
+        self.num_landmarks = num_landmarks
         self.conv1: Conv2d = init_model.conv1
         self.bn1: BatchNorm2d = init_model.bn1
         self.relu: ReLU = init_model.relu
