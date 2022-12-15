@@ -248,7 +248,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
             similarity = torch.sub(similarity, torch.eye(10).to(device))
             orth_loss = torch.sum(torch.square(similarity))
-            loss_orth = orth_loss / 100
+            loss_orth = orth_loss / 25
 
 
             ### CALCULATE ROTATED LANDMARKS DISTANCE
