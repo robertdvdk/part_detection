@@ -42,11 +42,6 @@ class WhaleDataset(torch.utils.data.Dataset):
                                                        return_counts=True)
 
 
-        if not annotated:
-            # Remove classes with less than 3 photos
-            unique_labels = unique_labels[unique_label_counts >= minimum_images]
-            # Remove new_whale
-            unique_labels = unique_labels[1:]
 
         # Create vector of labels and set ids (1 for train, 2 for test)
         self.unique_labels: List[int] = list(unique_labels)
