@@ -7,22 +7,103 @@ import torch
 import torchvision
 import torchvision.transforms.functional
 from torch import Tensor
+import torch.multiprocessing
+
+import skimage
 from torch.utils.data import Dataset, DataLoader
 from torchvision.models import ResNet
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 
-from datasets import WhaleDataset, WhaleTripletDataset, PartImageNetDataset, PartImageNetTripletDataset
+from datasets import WhaleDataset, WhaleTripletDataset, PartImageNetDataset, PartImageNetTripletDataset, CUBDataset, CUBTripletDataset
 from nets import Net, LandmarkNet
 
+# to avoid error "too many files open"
+torch.multiprocessing.set_sharing_strategy('file_system')
 
-PARTIMAGENET = True
+experiment = "cub_orth_equiv"
+
+if not os.path.exists(f'./results_{experiment}'):
+    os.mkdir(f'./results_{experiment}')
+
+# dataset = "WHALE"
+# dataset = "PIM"
+dataset = "CUB"
+
+def landmark_coordinates(maps, device):
+    grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
+                                    torch.arange(maps.shape[3]))
+    grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
+    grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
+
+    map_sums = maps.sum(3).sum(2).detach()
+    maps_x = grid_x * maps
+    maps_y = grid_y * maps
+    loc_x = maps_x.sum(3).sum(2) / map_sums
+    loc_y = maps_y.sum(3).sum(2) / map_sums
+
+    return loc_x, loc_y, grid_x, grid_y
+
+def rotate_image(rotations, image):
+    angle = int(np.random.choice(rotations))
+    rot_img = torchvision.transforms.functional.rotate(image, angle)
+    return rot_img, angle
+
+def flip_image(image):
+    flip = np.random.random()
+    if flip > 1:
+    # if flip > 0.5:
+        flip_img = torchvision.transforms.functional.vflip(image)
+    else:
+        flip_img = image
+    # return flip_img, flip > 0.5
+    return flip_img, flip > 1
+
+def landmarks_to_rgb(maps):
+
+    colors = [[0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
+
+    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
+
+    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25]]
+
+    rgb = np.zeros((maps.shape[1],maps.shape[2],3))
+
+    for m in range(maps.shape[0]):
+
+        for c in range(3):
+
+            rgb[:,:,c] += maps[m,:,:]*colors[m][c]
+
+    return rgb
+
+def show_maps(ims,maps,loc_x,loc_y, epoch):
+    ''' Plot images, attention maps and landmark centroids.
+    Args:
+    ims: Torch tensor of images, [batch,3,width_im,height_im]
+    maps: Torch tensor of attention maps, [batch, number of maps, width_map, height_map]
+    loc_x, loc_y: centroid coordinates, [batch, 0, number of maps]
+    '''
+    colors = [[0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
+    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
+    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25]]
+    fig,axs = plt.subplots(3,3)
+    i = 0
+    for ax in axs.reshape(-1):
+        if i<maps.shape[0]:
+            landmarks = landmarks_to_rgb( maps[i,0:-1,:,:].detach().cpu().numpy()) #* feature_magnitudes[i,:,:].unsqueeze(-1).detach().cpu().numpy()
+            ax.imshow(skimage.transform.resize( landmarks ,(256,256)) + skimage.transform.resize( ims[i,:,:,:].permute(1,2,0).numpy()*255,(256,256)))
+            ax.scatter(loc_y[i,0:-1].detach().cpu()*256/maps.shape[-1],loc_x[i,0:-1].detach().cpu()*256/maps.shape[-1],c=colors[0:loc_x.shape[1]-1],marker='x')
+        i += 1
+
+    plt.savefig(f'./results_{experiment}/{epoch}_{np.random.randint(0, 10)}')
+    # plt.show()
 
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
     # Training
     if all_losses:
-        running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class = all_losses
+        running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth = all_losses
     elif not all_losses and epoch != 0:
         print('Please pass the losses of the previous epoch to the training function')
     triplet_loss = torch.nn.TripletMarginLoss(margin=1.0, p=2)
@@ -91,6 +172,11 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         positive, _, scores_pos, _ = net(sample[1].to(device))
         negative, _, _, _ = net(sample[2].to(device))
 
+        ### FORWARD PASS OF ROTATED IMAGES
+        rot_img, rot_angle = rotate_image([90, 180, 270], sample[0])
+        flip_img, is_flipped = flip_image(rot_img)
+        _, equiv_map, _, _ = net(flip_img.to(device))
+
         if do_baseline:
             loss = triplet_loss(anchor, positive, negative)
             loss_class = classif_loss(scores_anchor, sample[3].to(
@@ -100,6 +186,8 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_conc = total_loss.detach() * 0
             loss_max = total_loss.detach() * 0
             loss_mean = total_loss.detach() * 0
+            loss_equiv = total_loss.detach() * 0
+            loss_orth = total_loss.detach() * 0
         else:
             # Keep track of average distances between postives and negatives
             net.avg_dist_pos.data = net.avg_dist_pos.data * 0.95 + (
@@ -134,16 +222,17 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                     (dropout_mask * scores_pos).mean(-1) * d,
                     sample[3].to(device)) / 10
             # Get landmark coordinates
-            grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
-                                            torch.arange(maps.shape[3]))
-            grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
-            grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
-
-            map_sums = maps.sum(3).sum(2).detach()
-            maps_x = grid_x * maps
-            maps_y = grid_y * maps
-            loc_x = maps_x.sum(3).sum(2) / map_sums
-            loc_y = maps_y.sum(3).sum(2) / map_sums
+            loc_x, loc_y, grid_x, grid_y = landmark_coordinates(maps, device)
+            # grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
+            #                                 torch.arange(maps.shape[3]))
+            # grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
+            # grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
+            #
+            # map_sums = maps.sum(3).sum(2).detach()
+            # maps_x = grid_x * maps
+            # maps_y = grid_y * maps
+            # loc_x = maps_x.sum(3).sum(2) / map_sums
+            # loc_y = maps_y.sum(3).sum(2) / map_sums
 
             # Concentration loss
             loss_conc_x = (loc_x.unsqueeze(-1).unsqueeze(-1) - grid_x) ** 2
@@ -154,8 +243,25 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_max = maps.max(-1)[0].max(-1)[0].mean()
             loss_max = 1 - loss_max
 
+            ### Orthogonality loss
+            normed_feature = torch.nn.functional.normalize(scores_anchor, dim=1)
+            similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
+            similarity = torch.sub(similarity, torch.eye(10).to(device))
+            orth_loss = torch.sum(torch.square(similarity))
+            loss_orth = orth_loss / 100
+
+
+            ### CALCULATE ROTATED LANDMARKS DISTANCE
+            rot_back = torchvision.transforms.functional.rotate(equiv_map, 360-rot_angle)
+            if is_flipped:
+                flip_back = torchvision.transforms.functional.vflip(rot_back)
+            else:
+                flip_back = rot_back
+            diff = torch.subtract(maps, flip_back)
+            loss_equiv = torch.mean(torch.square(diff)) * 50
+
             loss_mean = maps[:, 0:-1, :, :].mean()
-            total_loss = loss + 1 * loss_conc + 0 * loss_mean + 1 * loss_max + 1 * loss_class * do_class  # + 1*loss_masked_diff
+            total_loss = loss + 1 * loss_conc + 0 * loss_mean + 1 * loss_max + 1 * loss_class * do_class + 1 * loss_equiv + 1 * loss_orth# + 1*loss_masked_diff
 
         total_loss.backward()
         optimizer.step()
@@ -166,6 +272,9 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             running_loss_mean = loss_mean.item()
             running_loss_max = loss_max.item()
             running_loss_class = loss_class.item()
+            running_loss_equiv = loss_equiv.item()
+            running_loss_orth = loss_orth.item()
+
             # running_loss_masked_diff = loss_masked_diff.item()
         else:
             # noinspection PyUnboundLocalVariable
@@ -178,18 +287,26 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             running_loss_max = 0.99 * running_loss_max + 0.01 * loss_max.item()
             # noinspection PyUnboundLocalVariable
             running_loss_class = 0.99 * running_loss_class + 0.01 * loss_class.item()
+
+            running_loss_equiv = 0.99 * running_loss_equiv + 0.01 * loss_equiv.item()
+
+            running_loss_orth = 0.99 * running_loss_orth + 0.01 * loss_orth.item()
             # running_loss_masked_diff = 0.99*running_loss_masked_diff + 0.01*loss_masked_diff.item()
         pbar.set_description(
-            "Training loss: %f, Conc: %f, Mean: %f, Max: %f, Class: %f" % (
-                running_loss, running_loss_conc, running_loss_mean,
-                running_loss_max, running_loss_class))
+            "Tot: %.3f, Conc: %.3f, Max: %.3f, Class: %.3f, Equiv: %.3f, Orth: %.3f" % (
+                running_loss, running_loss_conc,
+                running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth))
+        # pbar.set_description(
+        #     "Tot: %.3f, Conc: %.3f, Mean: %.3f, Max: %.3f, Class: %.3f" % (
+        #         running_loss, running_loss_conc, running_loss_mean,
+        #         running_loss_max, running_loss_class))
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), model_name)
-    all_losses = running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class
+    all_losses = running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth
     return net, all_losses
 
-def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader):
+def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader, epoch):
     net.eval()
     net.to(device)
     pbar: tqdm = tqdm(val_loader, position=0, leave=True)
@@ -256,46 +373,52 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
 
             # for k in zip(sample[0], loc_x, loc_y):
             #     img, x_coords_list, y_coords_list = k
-            #     x_coords_list = x_coords_list.cpu().detach().numpy() * 4
-            #     y_coords_list = y_coords_list.cpu().detach().numpy() * 16
+            #     x_coords_list = x_coords_list.cpu().detach().numpy() * 8
+            #     y_coords_list = y_coords_list.cpu().detach().numpy() * 8
             #     plt.imshow(img.permute(1, 2, 0) * 255)
-            #     # plt.scatter(x_coords_list, y_coords_list)
-            #     plt.savefig(f'/home/robert/projects/part_detection/with_landmarks/{l}.png')
+            #     plt.scatter(x_coords_list, y_coords_list)
+            #     plt.savefig(f'./validation_imgs/{dataset}_{l}.png')
             #     plt.close()
             #     l += 1
+            if np.random.random() < 0.05:
+                show_maps(sample[0], maps, loc_x, loc_y, epoch)
 
+    top5acc = str((np.array(topk_class)<5).mean())
 
-    print((np.array(topk_class)<5).mean())
+    print(top5acc)
+    with open(f'results_{experiment}/res.txt', 'a') as fopen:
+        fopen.write(top5acc + "\n")
     pbar.close()
 
 def main():
     print(torch.cuda.is_available())
-    if not os.path.exists('./happyWhale'):
-        try:
-            os.mkdir('./happyWhale')
-            from kaggle.api.kaggle_api_extended import KaggleApi
-            api: Union[KaggleApi, KaggleApi] = KaggleApi()
-            api.authenticate()
-            api.competition_download_files('humpback-whale-identification',
-                                           path='./happyWhale/')
+    # if not os.path.exists('./happyWhale'):
+    #     try:
+    #         os.mkdir('./happyWhale')
+    #         from kaggle.api.kaggle_api_extended import KaggleApi
+    #         api: Union[KaggleApi, KaggleApi] = KaggleApi()
+    #         api.authenticate()
+    #         api.competition_download_files('humpback-whale-identification',
+    #                                        path='./happyWhale/')
+    #
+    #         import zipfile
+    #
+    #         with zipfile.ZipFile('./happyWhale/humpback-whale-identification.zip', 'r') as zipref:
+    #             zipref.extractall('./happyWhale/')
+    #     except Exception as e:
+    #         os.rmdir('./happyWhale')
+    #         print(e)
+    #         raise RuntimeError("Unable to download Kaggle files! Please read README.md")
 
-            import zipfile
 
-            with zipfile.ZipFile('./happyWhale/humpback-whale-identification.zip', 'r') as zipref:
-                zipref.extractall('./happyWhale/')
-        except Exception as e:
-            os.rmdir('./happyWhale')
-            print(e)
-            raise RuntimeError("Unable to download Kaggle files! Please read README.md")
+    whale_path: str = "./datasets/happyWhale"
+    pim_path: str = "./datasets/pim"
+    cub_path: str = "./datasets/cub/CUB_200_2011"
 
-
-    data_path: str = "./happyWhale"
-    partImageNet_data_path: str = "./partImageNet"
-
-    if not PARTIMAGENET:
-        dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
-        dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
-        dataset_full: WhaleDataset = WhaleDataset(data_path, mode='no_set', minimum_images=0,
+    if dataset == "WHALE":
+        dataset_train: WhaleDataset = WhaleDataset(whale_path, mode='train')
+        dataset_val: WhaleDataset = WhaleDataset(whale_path, mode='val')
+        dataset_full: WhaleDataset = WhaleDataset(whale_path, mode='no_set', minimum_images=0,
                                     alt_data_path='Teds_OSM')
         dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
 
@@ -306,9 +429,10 @@ def main():
         val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
                                                  batch_size=batch_size, shuffle=False,
                                                  num_workers=4)
-    else:
-        dataset_train: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='train')
-        dataset_val: WhaleDataset = PartImageNetDataset(partImageNet_data_path,mode='val')
+    elif dataset == "PIM":
+        dataset_train: WhaleDataset = PartImageNetDataset(pim_path,mode='train')
+        dataset_val: WhaleDataset = PartImageNetDataset(pim_path,mode='val')
+
         dataset_train_triplet: PartImageNetTripletDataset = PartImageNetTripletDataset(dataset_train)
 
         batch_size: int = 12
@@ -319,11 +443,30 @@ def main():
                                                  batch_size=batch_size, shuffle=False,
                                                  num_workers=4)
 
+    elif dataset == "CUB":
+        np.random.seed(1)
+        dataset_train = CUBDataset(cub_path, mode='train')
+        dataset_val = CUBDataset(cub_path, mode='val', train_samples=dataset_train.trainsamples)
+        dataset_train_triplet = CUBTripletDataset(dataset_train)
+
+        # don't use for now
+        dataset_test = CUBDataset(cub_path, mode='test')
+
+
+
+        batch_size = 12
+        train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
+                                                   batch_size=batch_size, shuffle=True,
+                                                   num_workers=4)
+        val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
+                                                 batch_size=batch_size, shuffle=False,
+                                                 num_workers=4)
+
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    number_epochs: int = 40
-    model_name: str = 'landmarks_10_nodrop_40epochs_landmarknet_correctorientation.pt'
-    model_name_init: str = 'landmarks_10_nodrop_40epochs_landmarknet.pt'
+    number_epochs: int = 100
+    model_name: str = f'{experiment}.pt'
+    model_name_init: str = f'{experiment}.pt'
     warm_start: bool = False
     do_only_test: bool = False
 
@@ -363,11 +506,11 @@ def main():
             else:
                 net, all_losses = train(net, train_loader, device, do_baseline, model_name, epoch)
             print(f'Validation accuracy in epoch {epoch}:')
-            validation(device, do_baseline, net, val_loader)
+            validation(device, do_baseline, net, val_loader, epoch)
         # Validation
         else:
             print('Validation accuracy with saved network:')
-            validation(device, do_baseline, net, val_loader)
+            validation(device, do_baseline, net, val_loader, epoch)
 
 if __name__=="__main__":
     main()
