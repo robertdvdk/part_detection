@@ -1,4 +1,7 @@
-# import cv2
+from lib import show_maps, landmark_coordinates, rotate_image, flip_image
+from datasets import WhaleDataset, WhaleTripletDataset, PartImageNetDataset, PartImageNetTripletDataset, CUBDataset, CUBTripletDataset
+from nets import Net, LandmarkNet
+
 import os
 from typing import Union, Any, Optional, List
 
@@ -9,15 +12,11 @@ import torchvision.transforms.functional
 from torch import Tensor
 import torch.multiprocessing
 
-import skimage
 from torch.utils.data import Dataset, DataLoader
 from torchvision.models import ResNet
 from tqdm import tqdm
 
-import matplotlib.pyplot as plt
 
-from datasets import WhaleDataset, WhaleTripletDataset, PartImageNetDataset, PartImageNetTripletDataset, CUBDataset, CUBTripletDataset
-from nets import Net, LandmarkNet
 
 # to avoid error "too many files open"
 torch.multiprocessing.set_sharing_strategy('file_system')
@@ -30,75 +29,6 @@ if not os.path.exists(f'./results_{experiment}'):
 # dataset = "WHALE"
 # dataset = "PIM"
 dataset = "CUB"
-
-def landmark_coordinates(maps, device):
-    grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
-                                    torch.arange(maps.shape[3]))
-    grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
-    grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
-
-    map_sums = maps.sum(3).sum(2).detach()
-    maps_x = grid_x * maps
-    maps_y = grid_y * maps
-    loc_x = maps_x.sum(3).sum(2) / map_sums
-    loc_y = maps_y.sum(3).sum(2) / map_sums
-
-    return loc_x, loc_y, grid_x, grid_y
-
-def rotate_image(rotations, image):
-    angle = int(np.random.choice(rotations))
-    rot_img = torchvision.transforms.functional.rotate(image, angle)
-    return rot_img, angle
-
-def flip_image(image):
-    flip = np.random.random()
-    if flip > 1:
-    # if flip > 0.5:
-        flip_img = torchvision.transforms.functional.vflip(image)
-    else:
-        flip_img = image
-    # return flip_img, flip > 0.5
-    return flip_img, flip > 1
-
-def landmarks_to_rgb(maps):
-
-    colors = [[0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
-
-    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
-
-    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25]]
-
-    rgb = np.zeros((maps.shape[1],maps.shape[2],3))
-
-    for m in range(maps.shape[0]):
-
-        for c in range(3):
-
-            rgb[:,:,c] += maps[m,:,:]*colors[m][c]
-
-    return rgb
-
-def show_maps(ims,maps,loc_x,loc_y, epoch):
-    ''' Plot images, attention maps and landmark centroids.
-    Args:
-    ims: Torch tensor of images, [batch,3,width_im,height_im]
-    maps: Torch tensor of attention maps, [batch, number of maps, width_map, height_map]
-    loc_x, loc_y: centroid coordinates, [batch, 0, number of maps]
-    '''
-    colors = [[0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
-    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25],
-    [0.75,0,0],[0,0.75,0],[0,0,0.75],[0.5,0.5,0],[0.5,0,0.5],[0,0.5,0.5],[0.75,0.25,0],[0.75,0,0.25],[0,0.75,0.25]]
-    fig,axs = plt.subplots(3,3)
-    i = 0
-    for ax in axs.reshape(-1):
-        if i<maps.shape[0]:
-            landmarks = landmarks_to_rgb( maps[i,0:-1,:,:].detach().cpu().numpy()) #* feature_magnitudes[i,:,:].unsqueeze(-1).detach().cpu().numpy()
-            ax.imshow(skimage.transform.resize( landmarks ,(256,256)) + skimage.transform.resize( ims[i,:,:,:].permute(1,2,0).numpy()*255,(256,256)))
-            ax.scatter(loc_y[i,0:-1].detach().cpu()*256/maps.shape[-1],loc_x[i,0:-1].detach().cpu()*256/maps.shape[-1],c=colors[0:loc_x.shape[1]-1],marker='x')
-        i += 1
-
-    plt.savefig(f'./results_{experiment}/{epoch}_{np.random.randint(0, 10)}')
-    # plt.show()
 
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
     # Training
@@ -144,7 +74,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         # Data augmentation 4: random transform anchor, positive and negative
         angle = np.random.randn() * 0.1
         scale = np.random.rand() * 0.2 + 0.9
-        # noinspection PyTypeChecker
+        # Anchor
         sample[0] = torchvision.transforms.functional.affine(sample[0],
                                                              angle=angle * 180 / np.pi,
                                                              translate=[0,0],
@@ -152,7 +82,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                                                              shear=0)
         angle = np.random.randn() * 0.1
         scale = np.random.rand() * 0.2 + 0.9
-        # noinspection PyTypeChecker
+        # Positive
         sample[1] = torchvision.transforms.functional.affine(sample[1],
                                                              angle=angle * 180 / np.pi,
                                                              translate=[0,0],
@@ -160,7 +90,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                                                              shear=0)
         angle = np.random.randn() * 0.1
         scale = np.random.rand() * 0.2 + 0.9
-        # noinspection PyTypeChecker
+        # Negative
         sample[2] = torchvision.transforms.functional.affine(sample[2],
                                                              angle=angle * 180 / np.pi,
                                                              translate=[0,0],
@@ -223,16 +153,6 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                     sample[3].to(device)) / 10
             # Get landmark coordinates
             loc_x, loc_y, grid_x, grid_y = landmark_coordinates(maps, device)
-            # grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
-            #                                 torch.arange(maps.shape[3]))
-            # grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
-            # grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
-            #
-            # map_sums = maps.sum(3).sum(2).detach()
-            # maps_x = grid_x * maps
-            # maps_y = grid_y * maps
-            # loc_x = maps_x.sum(3).sum(2) / map_sums
-            # loc_y = maps_y.sum(3).sum(2) / map_sums
 
             # Concentration loss
             loss_conc_x = (loc_x.unsqueeze(-1).unsqueeze(-1) - grid_x) ** 2
@@ -275,7 +195,6 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             running_loss_equiv = loss_equiv.item()
             running_loss_orth = loss_orth.item()
 
-            # running_loss_masked_diff = loss_masked_diff.item()
         else:
             # noinspection PyUnboundLocalVariable
             running_loss = 0.99 * running_loss + 0.01 * loss.item()
@@ -296,10 +215,6 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             "Tot: %.3f, Conc: %.3f, Max: %.3f, Class: %.3f, Equiv: %.3f, Orth: %.3f" % (
                 running_loss, running_loss_conc,
                 running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth))
-        # pbar.set_description(
-        #     "Tot: %.3f, Conc: %.3f, Mean: %.3f, Max: %.3f, Class: %.3f" % (
-        #         running_loss, running_loss_conc, running_loss_mean,
-        #         running_loss_max, running_loss_class))
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), model_name)
@@ -346,12 +261,10 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
                 topk_lm_class = []
                 class_lm = []
                 for lm in range(feat.shape[2]):
-                    # topk_lm.append([])
                     topk_lm_class.append([])
                     class_lm.append([])
             for lm in range(feat.shape[2]):
                 for j in range(scores.shape[0]):
-                    # topk_lm[lm].append(list(sorted_labels[j,:]).index(lab[j]))
                     class_lm[lm].append(
                         int(scores[j, :, lm].argmax().cpu().numpy()))
                     topk_lm_class[lm].append(
@@ -371,15 +284,6 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             loc_x = maps_x.sum(3).sum(2) / map_sums
             loc_y = maps_y.sum(3).sum(2) / map_sums
 
-            # for k in zip(sample[0], loc_x, loc_y):
-            #     img, x_coords_list, y_coords_list = k
-            #     x_coords_list = x_coords_list.cpu().detach().numpy() * 8
-            #     y_coords_list = y_coords_list.cpu().detach().numpy() * 8
-            #     plt.imshow(img.permute(1, 2, 0) * 255)
-            #     plt.scatter(x_coords_list, y_coords_list)
-            #     plt.savefig(f'./validation_imgs/{dataset}_{l}.png')
-            #     plt.close()
-            #     l += 1
             if np.random.random() < 0.05:
                 show_maps(sample[0], maps, loc_x, loc_y, epoch)
 
@@ -392,24 +296,6 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
 
 def main():
     print(torch.cuda.is_available())
-    # if not os.path.exists('./happyWhale'):
-    #     try:
-    #         os.mkdir('./happyWhale')
-    #         from kaggle.api.kaggle_api_extended import KaggleApi
-    #         api: Union[KaggleApi, KaggleApi] = KaggleApi()
-    #         api.authenticate()
-    #         api.competition_download_files('humpback-whale-identification',
-    #                                        path='./happyWhale/')
-    #
-    #         import zipfile
-    #
-    #         with zipfile.ZipFile('./happyWhale/humpback-whale-identification.zip', 'r') as zipref:
-    #             zipref.extractall('./happyWhale/')
-    #     except Exception as e:
-    #         os.rmdir('./happyWhale')
-    #         print(e)
-    #         raise RuntimeError("Unable to download Kaggle files! Please read README.md")
-
 
     whale_path: str = "./datasets/happyWhale"
     pim_path: str = "./datasets/pim"
@@ -483,20 +369,8 @@ def main():
         net.load_state_dict(torch.load(model_name_init), strict=False)
     net.to(device)
 
-
-
     if do_only_test:
         number_epochs = 1
-
-    val_accs: list[Any] = []
-
-    test_batch: list[Any] = []
-    test_batch_labels: list[Any] = []
-    # for id in test_list: # TODO what is test_list? -> probably list of whale ids in test set
-    #     num = list(dataset_full.names).index(id)
-    #     test_batch.append(torch.Tensor(dataset_full[num][0]).unsqueeze(0))
-    #     test_batch_labels.append(dataset_full.unique_labels[dataset_full[num][1]])
-
 
     all_losses = []
     for epoch in range(number_epochs):
