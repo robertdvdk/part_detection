@@ -21,10 +21,17 @@ from tqdm import tqdm
 # to avoid error "too many files open"
 torch.multiprocessing.set_sharing_strategy('file_system')
 
-experiment = "cub_orthdiv25_equivmult50"
-
+# Used to name the .pt file and to store results
+experiment = "cub_orthdiv100_equivwflipmult50"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
+# Loss hyperparameters
+l_max = 1
+l_equiv = 50
+l_conc = 1
+l_orth = 0.01
+l_class = 1
+
 
 # dataset = "WHALE"
 # dataset = "PIM"
@@ -104,7 +111,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
 
         ### FORWARD PASS OF ROTATED IMAGES
         rot_img, rot_angle = rotate_image([90, 180, 270], sample[0])
-        flip_img, is_flipped = flip_image(rot_img)
+        flip_img, is_flipped = flip_image(rot_img, 0.5)
         _, equiv_map, _, _ = net(flip_img.to(device))
 
         if do_baseline:
@@ -166,9 +173,9 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             ### Orthogonality loss
             normed_feature = torch.nn.functional.normalize(scores_anchor, dim=1)
             similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
-            similarity = torch.sub(similarity, torch.eye(10).to(device))
+            similarity = torch.sub(similarity, torch.eye(net.num_landmarks).to(device))
             orth_loss = torch.sum(torch.square(similarity))
-            loss_orth = orth_loss / 25
+            loss_orth = orth_loss * l_orth
 
 
             ### CALCULATE ROTATED LANDMARKS DISTANCE
@@ -178,10 +185,10 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             else:
                 flip_back = rot_back
             diff = torch.subtract(maps, flip_back)
-            loss_equiv = torch.mean(torch.square(diff)) * 50
+            loss_equiv = torch.mean(torch.square(diff)) * l_equiv
 
             loss_mean = maps[:, 0:-1, :, :].mean()
-            total_loss = loss + 1 * loss_conc + 0 * loss_mean + 1 * loss_max + 1 * loss_class * do_class + 1 * loss_equiv + 1 * loss_orth# + 1*loss_masked_diff
+            total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth
 
         total_loss.backward()
         optimizer.step()
@@ -350,7 +357,7 @@ def main():
 
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    number_epochs: int = 100
+    number_epochs: int = 40
     model_name: str = f'{experiment}.pt'
     model_name_init: str = f'{experiment}.pt'
     warm_start: bool = False
