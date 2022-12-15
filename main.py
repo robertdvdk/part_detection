@@ -16,13 +16,14 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.models import ResNet
 from tqdm import tqdm
 
+import matplotlib.pyplot as plt
 
 
 # to avoid error "too many files open"
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_orthdiv100_equivwflipmult50"
+experiment = "cub_comploss"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
@@ -31,6 +32,7 @@ l_equiv = 50
 l_conc = 1
 l_orth = 0.01
 l_class = 1
+l_comp = 1
 
 
 # dataset = "WHALE"
@@ -40,7 +42,7 @@ dataset = "CUB"
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
     # Training
     if all_losses:
-        running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth = all_losses
+        running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp = all_losses
     elif not all_losses and epoch != 0:
         print('Please pass the losses of the previous epoch to the training function')
     triplet_loss = torch.nn.TripletMarginLoss(margin=1.0, p=2)
@@ -125,6 +127,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_mean = total_loss.detach() * 0
             loss_equiv = total_loss.detach() * 0
             loss_orth = total_loss.detach() * 0
+            loss_comp = total_loss.detach() * 0
         else:
             # Keep track of average distances between postives and negatives
             net.avg_dist_pos.data = net.avg_dist_pos.data * 0.95 + (
@@ -177,8 +180,37 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             orth_loss = torch.sum(torch.square(similarity))
             loss_orth = orth_loss * l_orth
 
+            ### Compositionality loss
+            upsampled_maps = torch.nn.functional.interpolate(maps, size=(256, 256))
+            random_landmark = np.random.randint(0, net.num_landmarks)
+            random_map = upsampled_maps[:, random_landmark]
+            # Permute dimensions: sample[0] is 12x3x256x256, random_map is 12x256x256
+            # permute sample[0] to 3x12x256x256 so we can multiply them
+            masked_imgs = torch.permute((torch.permute(sample[0]*255, (1, 0, 2, 3))).to(device) * random_map, (1, 0, 2, 3))
+            a, b, c, d = net(masked_imgs)
+            diff = torch.sub(a[:, :, random_landmark], anchor[:, :, random_landmark])
+            comp_loss = torch.sum(torch.square(diff))
+            loss_comp = comp_loss
 
-            ### CALCULATE ROTATED LANDMARKS DISTANCE
+            # plt.imshow(random_map[5].detach().cpu())
+            # plt.show()
+            # plt.imshow(torch.permute(sample[0][5]*255, (1, 2, 0)))
+            # plt.show()
+            # plt.imshow(torch.permute(masked_imgs[5], (1, 2, 0)).detach().cpu())
+            # plt.show()
+            # for curr_map, curr_img in zip(upsampled_maps, sample[0]*255):
+            #     random_landmark = np.random.randint(0, net.num_landmarks)
+            #     random_map = curr_map[random_landmark]
+            #     masked_img = curr_img.to(device) * random_map
+            #     _, _, scores_mask, _ = net(masked_img)
+            #     score_mask = scores_mask[random_landmark]
+            #     print(score_mask)
+
+
+
+
+
+            ### Equivariance loss: calculate rotated landmarks distance
             rot_back = torchvision.transforms.functional.rotate(equiv_map, 360-rot_angle)
             if is_flipped:
                 flip_back = torchvision.transforms.functional.vflip(rot_back)
@@ -188,7 +220,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_equiv = torch.mean(torch.square(diff)) * l_equiv
 
             loss_mean = maps[:, 0:-1, :, :].mean()
-            total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth
+            total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
 
         total_loss.backward()
         optimizer.step()
@@ -201,6 +233,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             running_loss_class = loss_class.item()
             running_loss_equiv = loss_equiv.item()
             running_loss_orth = loss_orth.item()
+            running_loss_comp = loss_comp.item()
 
         else:
             # noinspection PyUnboundLocalVariable
@@ -217,15 +250,17 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             running_loss_equiv = 0.99 * running_loss_equiv + 0.01 * loss_equiv.item()
 
             running_loss_orth = 0.99 * running_loss_orth + 0.01 * loss_orth.item()
+
+            running_loss_comp = 0.99 * running_loss_comp + 0.01 * loss_comp.item()
             # running_loss_masked_diff = 0.99*running_loss_masked_diff + 0.01*loss_masked_diff.item()
         pbar.set_description(
-            "Tot: %.3f, Conc: %.3f, Max: %.3f, Class: %.3f, Equiv: %.3f, Orth: %.3f" % (
+            "T: %.3f, Cnc: %.3f, M: %.3f, Cls: %.3f, Eq: %.3f, Or: %.3f, Cmp: %.3f" % (
                 running_loss, running_loss_conc,
-                running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth))
+                running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp))
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), model_name)
-    all_losses = running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth
+    all_losses = running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp
     return net, all_losses
 
 def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader, epoch):
@@ -292,7 +327,7 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             loc_y = maps_y.sum(3).sum(2) / map_sums
 
             if np.random.random() < 0.05:
-                show_maps(sample[0], maps, loc_x, loc_y, epoch)
+                show_maps(sample[0], maps, loc_x, loc_y, epoch, experiment)
 
     top5acc = str((np.array(topk_class)<5).mean())
 
