@@ -26,7 +26,7 @@ class WhaleDataset(torch.utils.data.Dataset):
     label_ids: ndarray
     names: ndarray
 
-    def __init__(self, data_path: str, mode: str = 'train', height: int = 256, minimum_images: int = 3,
+    def __init__(self, data_path: str, mode: str = 'train', height: int = 256, minimum_images: int = 3, annotated: bool = False,
                  alt_data_path: Optional[str] = None) -> None:
         """
         Args:
@@ -41,11 +41,7 @@ class WhaleDataset(torch.utils.data.Dataset):
         unique_labels, unique_label_counts = np.unique(train_data['Id'],
                                                        return_counts=True)
 
-        # Remove classes with less than 3 photos
-        unique_labels = unique_labels[unique_label_counts >= minimum_images]
 
-        # Remove new_whale
-        unique_labels = unique_labels[1:]
 
         # Create vector of labels and set ids (1 for train, 2 for test)
         self.unique_labels: List[int] = list(unique_labels)
