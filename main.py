@@ -23,15 +23,17 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_comploss"
+experiment = "cub_comploss_bilinear_north_nequiv"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
 l_max = 1
-l_equiv = 50
+# l_equiv = 50
 l_conc = 1
-l_orth = 0.01
+# l_orth = 0.01
 l_class = 1
+l_equiv = 0
+l_orth = 0
 l_comp = 1
 
 
@@ -181,7 +183,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_orth = orth_loss * l_orth
 
             ### Compositionality loss
-            upsampled_maps = torch.nn.functional.interpolate(maps, size=(256, 256))
+            upsampled_maps = torch.nn.functional.interpolate(maps, size=(256, 256), mode='bilinear')
             random_landmark = np.random.randint(0, net.num_landmarks)
             random_map = upsampled_maps[:, random_landmark]
             # Permute dimensions: sample[0] is 12x3x256x256, random_map is 12x256x256
