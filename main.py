@@ -213,15 +213,19 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
 
 
             ### Equivariance loss: calculate rotated landmarks distance
-            rot_back = torchvision.transforms.functional.rotate(equiv_map, 360-rot_angle)
-            if is_flipped:
-                flip_back = torchvision.transforms.functional.vflip(rot_back)
-            else:
-                flip_back = rot_back
-            diff_equiv = torch.subtract(maps, flip_back)
-            loss_equiv = torch.mean(torch.square(diff_equiv)) * l_equiv
+            # rot_back = torchvision.transforms.functional.rotate(equiv_map, 360-rot_angle)
+            # if is_flipped:
+            #     flip_back = torchvision.transforms.functional.vflip(rot_back)
+            # else:
+            #     flip_back = rot_back
+            # diff_equiv = torch.subtract(maps, flip_back)
+            # loss_equiv = torch.mean(torch.square(diff_equiv)) * l_equiv
 
             loss_mean = maps[:, 0:-1, :, :].mean()
+
+            loss_equiv = 0
+            loss_comp = 0
+
             total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
 
         total_loss.backward()
