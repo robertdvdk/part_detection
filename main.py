@@ -1,4 +1,4 @@
-from lib import show_maps, landmark_coordinates, rotate_image, flip_image
+from lib import show_maps, landmark_coordinates, rotate_image, flip_image, get_epoch
 from datasets import WhaleDataset, WhaleTripletDataset, PartImageNetDataset, PartImageNetTripletDataset, CUBDataset, CUBTripletDataset
 from nets import Net, LandmarkNet
 
@@ -23,25 +23,25 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_comploss_bilinear_north_nequiv"
+experiment = "cub_neworth_ncomp_nequiv"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
 l_max = 1
-# l_equiv = 50
+# l_equiv = 25
 l_conc = 1
-# l_orth = 0.01
+l_orth = 0.01
 l_class = 1
 l_equiv = 0
-l_orth = 0
-l_comp = 1
-
+# l_orth = 0
+# l_comp = 1
+l_comp = 0
 
 # dataset = "WHALE"
 # dataset = "PIM"
 dataset = "CUB"
 
-def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, all_losses: list = None):
+def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, epoch_leftoff, all_losses: list = None):
     # Training
     if all_losses:
         running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp = all_losses
@@ -114,9 +114,9 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         negative, _, _, _ = net(sample[2].to(device))
 
         ### FORWARD PASS OF ROTATED IMAGES
-        rot_img, rot_angle = rotate_image([90, 180, 270], sample[0])
-        flip_img, is_flipped = flip_image(rot_img, 0.5)
-        _, equiv_map, _, _ = net(flip_img.to(device))
+        # rot_img, rot_angle = rotate_image([90, 180, 270], sample[0])
+        # flip_img, is_flipped = flip_image(rot_img, 0.5)
+        # _, equiv_map, _, _ = net(flip_img.to(device))
 
         if do_baseline:
             loss = triplet_loss(anchor, positive, negative)
@@ -176,23 +176,23 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_max = 1 - loss_max
 
             ### Orthogonality loss
-            normed_feature = torch.nn.functional.normalize(scores_anchor, dim=1)
+            normed_feature = torch.nn.functional.normalize(anchor, dim=1)
             similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
             similarity = torch.sub(similarity, torch.eye(net.num_landmarks).to(device))
             orth_loss = torch.sum(torch.square(similarity))
             loss_orth = orth_loss * l_orth
 
             ### Compositionality loss
-            upsampled_maps = torch.nn.functional.interpolate(maps, size=(256, 256), mode='bilinear')
-            random_landmark = np.random.randint(0, net.num_landmarks)
-            random_map = upsampled_maps[:, random_landmark]
-            # Permute dimensions: sample[0] is 12x3x256x256, random_map is 12x256x256
-            # permute sample[0] to 3x12x256x256 so we can multiply them
-            masked_imgs = torch.permute((torch.permute(sample[0]*255, (1, 0, 2, 3))).to(device) * random_map, (1, 0, 2, 3))
-            a, b, c, d = net(masked_imgs)
-            diff = torch.sub(a[:, :, random_landmark], anchor[:, :, random_landmark])
-            comp_loss = torch.sum(torch.square(diff))
-            loss_comp = comp_loss
+            # upsampled_maps = torch.nn.functional.interpolate(maps, size=(256, 256), mode='bilinear')
+            # random_landmark = np.random.randint(0, net.num_landmarks)
+            # random_map = upsampled_maps[:, random_landmark]
+            # # Permute dimensions: sample[0] is 12x3x256x256, random_map is 12x256x256
+            # # permute sample[0] to 3x12x256x256 so we can multiply them
+            # masked_imgs = torch.permute((torch.permute(sample[0], (1, 0, 2, 3))).to(device) * random_map, (1, 0, 2, 3))
+            # a_comp, b_comp, c_comp, d_comp = net(masked_imgs)
+            # diff_comp = torch.sub(a_comp[:, :, random_landmark].detach(), anchor[:, :, random_landmark])
+            # comp_loss = torch.sum(torch.square(diff_comp))
+            # loss_comp = comp_loss * l_comp
 
             # plt.imshow(random_map[5].detach().cpu())
             # plt.show()
@@ -218,8 +218,8 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                 flip_back = torchvision.transforms.functional.vflip(rot_back)
             else:
                 flip_back = rot_back
-            diff = torch.subtract(maps, flip_back)
-            loss_equiv = torch.mean(torch.square(diff)) * l_equiv
+            diff_equiv = torch.subtract(maps, flip_back)
+            loss_equiv = torch.mean(torch.square(diff_equiv)) * l_equiv
 
             loss_mean = maps[:, 0:-1, :, :].mean()
             total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
@@ -227,7 +227,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-        if epoch == 0 and i == 0:
+        if epoch == epoch_leftoff and i == 0:
             running_loss = loss.item()
             running_loss_conc = loss_conc.item()
             running_loss_mean = loss_mean.item()
@@ -394,7 +394,7 @@ def main():
 
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    number_epochs: int = 40
+    number_epochs: int = 100
     model_name: str = f'{experiment}.pt'
     model_name_init: str = f'{experiment}.pt'
     warm_start: bool = False
@@ -411,18 +411,21 @@ def main():
         net = LandmarkNet(basenet, num_landmarks)
     if warm_start:
         net.load_state_dict(torch.load(model_name_init), strict=False)
+        epoch_leftoff = get_epoch(experiment) + 1
+    else:
+        epoch_leftoff = 0
     net.to(device)
 
     if do_only_test:
         number_epochs = 1
 
     all_losses = []
-    for epoch in range(number_epochs):
+    for epoch in range(epoch_leftoff, number_epochs):
         if not do_only_test:
             if all_losses:
-                net, all_losses = train(net, train_loader, device, do_baseline, model_name,epoch, all_losses)
+                net, all_losses = train(net, train_loader, device, do_baseline, model_name,epoch, 0, all_losses)
             else:
-                net, all_losses = train(net, train_loader, device, do_baseline, model_name, epoch)
+                net, all_losses = train(net, train_loader, device, do_baseline, model_name, epoch, epoch_leftoff)
             print(f'Validation accuracy in epoch {epoch}:')
             validation(device, do_baseline, net, val_loader, epoch)
         # Validation

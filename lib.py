@@ -96,12 +96,23 @@ def show_maps(ims,maps,loc_x,loc_y, epoch, experiment):
     for ax in axs.reshape(-1):
         if i<maps.shape[0]:
             landmarks = landmarks_to_rgb( maps[i,0:-1,:,:].detach().cpu().numpy()) #* feature_magnitudes[i,:,:].unsqueeze(-1).detach().cpu().numpy()
-            ax.imshow(skimage.transform.resize( landmarks ,(256,256)) + skimage.transform.resize( ims[i,:,:,:].permute(1,2,0).numpy()*255,(256,256)))
+            ax.imshow((skimage.transform.resize(landmarks, (256, 256)) + skimage.transform.resize((ims[i, :, :, :].permute(1, 2, 0).numpy() * 255), (256, 256))))
             ax.scatter(loc_y[i,0:-1].detach().cpu()*256/maps.shape[-1],loc_x[i,0:-1].detach().cpu()*256/maps.shape[-1],c=colors[0:loc_x.shape[1]-1],marker='x')
         i += 1
 
     plt.savefig(f'./results_{experiment}/{epoch}_{np.random.randint(0, 10)}')
+
     # plt.show()
+
+def get_epoch(experiment):
+    files = os.listdir(f'results_{experiment}')
+    epoch = 0
+    for f in files:
+        if '_' in f:
+            fepoch = int(f.split('_')[0])
+            if fepoch > epoch:
+                epoch = fepoch
+    return epoch
 
 def main():
     ### Helper module, no main function

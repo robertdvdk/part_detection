@@ -22,7 +22,7 @@ class Net(torch.nn.Module):
         self.layer4[0].conv1.stride = (1, 1)
         self.finalpool: AdaptiveAvgPool2d = torch.nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc: Linear = torch.nn.Linear(512, 300, bias=False)
-        self.fc_class: Linear = torch.nn.Linear(300, 2000, bias=False)
+        self.fc_class: Linear = torch.nn.Linear(300, 200, bias=False)
 
     def forward(self, x: Tensor) -> Tuple[Tensor,Tensor,Tensor,Tensor]:
         x = self.conv1(x)
@@ -60,7 +60,7 @@ class LandmarkNet(torch.nn.Module):
         # self.fc_global = torch.nn.Conv2d(512,512,1)
         self.fc_landmarks: Conv2d = torch.nn.Conv2d(512, num_landmarks + 1, 1,
                                             bias=False)
-        self.fc_class: Linear = torch.nn.Linear(300, 2000, bias=False)
+        self.fc_class: Linear = torch.nn.Linear(300, 200, bias=False)
         # self.landmark_mask = torch.nn.Parameter(torch.zeros(1,300,10-1))
         # torch.nn.init.normal_(self.landmark_mask,std=1)
         # self.landmark_proj = torch.nn.Parameter(torch.Tensor(300,300,num_landmarks))
@@ -100,4 +100,5 @@ class LandmarkNet(torch.nn.Module):
         # x = torch.nn.functional.normalize(x)
         
         y: Tensor = self.fc_class(x.permute(0, 2, 1)).permute(0, 2, 1)
+        # x: feature vectors. y: classification results
         return x, maps, y, feature_tensor
