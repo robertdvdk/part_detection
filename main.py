@@ -23,19 +23,24 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_neworth_ncomp_nequiv"
+experiment = "cub_testcomp"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
 l_max = 1
-# l_equiv = 25
-l_conc = 1
-l_orth = 0.01
-l_class = 1
+
+# l_equiv = 10
 l_equiv = 0
-# l_orth = 0
-# l_comp = 1
-l_comp = 0
+
+l_conc = 1
+
+# l_orth = 0.01
+l_orth = 0
+
+l_class = 1
+
+l_comp = 1
+# l_comp = 0
 
 # dataset = "WHALE"
 # dataset = "PIM"
@@ -176,41 +181,31 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_max = 1 - loss_max
 
             ### Orthogonality loss
-            normed_feature = torch.nn.functional.normalize(anchor, dim=1)
-            similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
-            similarity = torch.sub(similarity, torch.eye(net.num_landmarks).to(device))
-            orth_loss = torch.sum(torch.square(similarity))
-            loss_orth = orth_loss * l_orth
+            #TODO change to cosine similarity
+            # normed_feature = torch.nn.functional.normalize(anchor, dim=1)
+            # similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
+            # similarity = torch.sub(similarity, torch.eye(net.num_landmarks).to(device))
+            # orth_loss = torch.sum(torch.square(similarity))
+            # loss_orth = orth_loss * l_orth
+            loss_orth = torch.Tensor([0.]).to(device)
 
             ### Compositionality loss
-            # upsampled_maps = torch.nn.functional.interpolate(maps, size=(256, 256), mode='bilinear')
-            # random_landmark = np.random.randint(0, net.num_landmarks)
-            # random_map = upsampled_maps[:, random_landmark]
-            # # Permute dimensions: sample[0] is 12x3x256x256, random_map is 12x256x256
-            # # permute sample[0] to 3x12x256x256 so we can multiply them
-            # masked_imgs = torch.permute((torch.permute(sample[0], (1, 0, 2, 3))).to(device) * random_map, (1, 0, 2, 3))
-            # a_comp, b_comp, c_comp, d_comp = net(masked_imgs)
-            # diff_comp = torch.sub(a_comp[:, :, random_landmark].detach(), anchor[:, :, random_landmark])
-            # comp_loss = torch.sum(torch.square(diff_comp))
-            # loss_comp = comp_loss * l_comp
-
-            # plt.imshow(random_map[5].detach().cpu())
-            # plt.show()
-            # plt.imshow(torch.permute(sample[0][5]*255, (1, 2, 0)))
-            # plt.show()
-            # plt.imshow(torch.permute(masked_imgs[5], (1, 2, 0)).detach().cpu())
-            # plt.show()
-            # for curr_map, curr_img in zip(upsampled_maps, sample[0]*255):
-            #     random_landmark = np.random.randint(0, net.num_landmarks)
-            #     random_map = curr_map[random_landmark]
-            #     masked_img = curr_img.to(device) * random_map
-            #     _, _, scores_mask, _ = net(masked_img)
-            #     score_mask = scores_mask[random_landmark]
-            #     print(score_mask)
-
-
-
-
+            upsampled_maps = torch.nn.functional.interpolate(maps, size=(256, 256), mode='bilinear')
+            # CHANGE TO PER IMAGE INSTEAD OF PER BATCH
+            random_landmark = np.random.randint(0, net.num_landmarks)
+            random_map = upsampled_maps[:, random_landmark]
+            map_argmax = torch.argmax(random_map, axis=0)
+            mask = torch.where(map_argmax==random_landmark, 1, 0)
+            # Permute dimensions: sample[0] is 12x3x256x256, random_map is 12x256x256
+            # permute sample[0] to 3x12x256x256 so we can multiply them
+            masked_imgs = torch.permute((torch.permute(sample[0], (1, 0, 2, 3))).to(device) * mask, (1, 0, 2, 3))
+            _, _, _, comp_featuretensor = net(masked_imgs)
+            masked_feature = (maps[:, random_landmark, :, :].unsqueeze(-1).permute(0,3,1,2) * comp_featuretensor).mean(2).mean(2)
+            unmasked_feature = anchor[:, :, random_landmark]
+            cos_sim = torch.nn.functional.cosine_similarity(masked_feature, unmasked_feature, dim=-1)
+            comp_loss = 1 - torch.mean(cos_sim)
+            loss_comp = comp_loss * l_comp
+            # loss_comp = torch.Tensor([0.]).to(device)
 
             ### Equivariance loss: calculate rotated landmarks distance
             # rot_back = torchvision.transforms.functional.rotate(equiv_map, 360-rot_angle)
@@ -220,14 +215,12 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             #     flip_back = rot_back
             # diff_equiv = torch.subtract(maps, flip_back)
             # loss_equiv = torch.mean(torch.square(diff_equiv)) * l_equiv
+            loss_equiv = torch.Tensor([0.]).to(device)
 
             loss_mean = maps[:, 0:-1, :, :].mean()
 
-            loss_equiv = 0
-            loss_comp = 0
-
-            total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
-
+            # total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
+            total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -263,10 +256,16 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             "T: %.3f, Cnc: %.3f, M: %.3f, Cls: %.3f, Eq: %.3f, Or: %.3f, Cmp: %.3f" % (
                 running_loss, running_loss_conc,
                 running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp))
+
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), model_name)
     all_losses = running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp
+    with open(f'./results_{experiment}/res.txt', 'a') as fopen:
+        fopen.write(f'Epoch: {epoch}\n')
+        fopen.write("T: %.3f, Cnc: %.3f, M: %.3f, Cls: %.3f, Eq: %.3f, Or: %.3f, Cmp: %.3f\n" % (
+                running_loss, running_loss_conc,
+                running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp))
     return net, all_losses
 
 def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader, epoch):
@@ -398,7 +397,7 @@ def main():
 
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    number_epochs: int = 100
+    number_epochs: int = 50
     model_name: str = f'{experiment}.pt'
     model_name_init: str = f'{experiment}.pt'
     warm_start: bool = False
@@ -409,10 +408,16 @@ def main():
 
     basenet: ResNet = torchvision.models.resnet18(pretrained=True)
     net: Union[Net,LandmarkNet]
+    if dataset=="WHALE":
+        num_cls = 2000
+    elif dataset=="CUB":
+        num_cls = 250
+    elif dataset=="PIM":
+        num_cls = None
     if do_baseline:
-        net = Net(basenet)
+        net = Net(basenet, num_classes=num_cls)
     else:
-        net = LandmarkNet(basenet, num_landmarks)
+        net = LandmarkNet(basenet, num_landmarks, num_classes=num_cls)
     if warm_start:
         net.load_state_dict(torch.load(model_name_init), strict=False)
         epoch_leftoff = get_epoch(experiment) + 1

@@ -6,7 +6,7 @@ from typing import Tuple
 
 # Baseline model, a modified ResNet with reduced downsampling for a spatially larger feature tensor in the last layer
 class Net(torch.nn.Module):
-    def __init__(self, init_model: ResNet) -> None:
+    def __init__(self, init_model: ResNet, num_classes: int=2000) -> None:
         super().__init__()
         self.conv1: Conv2d = init_model.conv1
         self.bn1: BatchNorm2d = init_model.bn1
@@ -22,7 +22,7 @@ class Net(torch.nn.Module):
         self.layer4[0].conv1.stride = (1, 1)
         self.finalpool: AdaptiveAvgPool2d = torch.nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc: Linear = torch.nn.Linear(512, 300, bias=False)
-        self.fc_class: Linear = torch.nn.Linear(300, 200, bias=False)
+        self.fc_class: Linear = torch.nn.Linear(300, num_classes, bias=False)
 
     def forward(self, x: Tensor) -> Tuple[Tensor,Tensor,Tensor,Tensor]:
         x = self.conv1(x)
@@ -40,7 +40,7 @@ class Net(torch.nn.Module):
 
 # Proposed landmark-based model, also based on ResNet
 class LandmarkNet(torch.nn.Module):
-    def __init__(self, init_model: ResNet, num_landmarks: int=8) -> None:
+    def __init__(self, init_model: ResNet, num_landmarks: int=8, num_classes: int=2000) -> None:
         super().__init__()
         self.num_landmarks = num_landmarks
         self.conv1: Conv2d = init_model.conv1
@@ -60,7 +60,9 @@ class LandmarkNet(torch.nn.Module):
         # self.fc_global = torch.nn.Conv2d(512,512,1)
         self.fc_landmarks: Conv2d = torch.nn.Conv2d(512, num_landmarks + 1, 1,
                                             bias=False)
-        self.fc_class: Linear = torch.nn.Linear(300, 200, bias=False)
+
+        # Had to be bit higher than number of classes due to CUDA device side assert error
+        self.fc_class: Linear = torch.nn.Linear(300, num_classes, bias=False)
         # self.landmark_mask = torch.nn.Parameter(torch.zeros(1,300,10-1))
         # torch.nn.init.normal_(self.landmark_mask,std=1)
         # self.landmark_proj = torch.nn.Parameter(torch.Tensor(300,300,num_landmarks))
