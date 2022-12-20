@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_fixequiv"
+experiment = "cub_test_all_losses"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
@@ -34,13 +34,13 @@ l_equiv = 1
 
 l_conc = 1
 
-# l_orth = 0.01
-l_orth = 0
+l_orth = 1
+# l_orth = 0
 
 l_class = 1
 
-# l_comp = 1
-l_comp = 0
+l_comp = 1
+# l_comp = 0
 
 # dataset = "WHALE"
 # dataset = "PIM"
@@ -119,8 +119,11 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         negative, _, _, _ = net(sample[2].to(device))
 
         ### FORWARD PASS OF ROTATED IMAGES
-        rot_img, rot_angle = rotate_image([90, 180, 270], sample[0])
-        flip_img, is_flipped = flip_image(rot_img, 0.5)
+        rot_img, rot_angle = rotate_image([0, 90, 180, 270], sample[0])
+        if rot_angle == 0:
+            flip_img, is_flipped = flip_image(rot_img, 1)
+        else:
+            flip_img, is_flipped = flip_image(rot_img, 0.5)
         _, equiv_map, _, _ = net(flip_img.to(device))
 
         if do_baseline:
@@ -181,12 +184,12 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_max = 1 - loss_max
 
             ### Orthogonality loss
-            # normed_feature = torch.nn.functional.normalize(anchor, dim=1)
-            # similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
-            # similarity = torch.sub(similarity, torch.eye(net.num_landmarks).to(device))
-            # orth_loss = torch.sum(torch.square(similarity))
-            # loss_orth = orth_loss * l_orth
-            loss_orth = torch.Tensor([0.]).to(device)
+            normed_feature = torch.nn.functional.normalize(anchor, dim=1)
+            similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
+            similarity = torch.sub(similarity, torch.eye(net.num_landmarks).to(device))
+            orth_loss = torch.mean(torch.square(similarity))
+            loss_orth = orth_loss * l_orth
+            # loss_orth = torch.Tensor([0.]).to(device)
 
             ### Compositionality loss
             upsampled_maps = torch.nn.functional.interpolate(maps, size=(256, 256), mode='bilinear')
@@ -208,18 +211,19 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
 
 
             ### Equivariance loss: calculate rotated landmarks distance
-            rot_back = torchvision.transforms.functional.rotate(equiv_map, 360-rot_angle)
             if is_flipped:
-                flip_back = torchvision.transforms.functional.vflip(rot_back)
+                flip_back = torchvision.transforms.functional.hflip(equiv_map)
             else:
-                flip_back = rot_back
-            cos_sim_equiv = torch.nn.functional.cosine_similarity(torch.reshape(maps[:, 0:-1, :, :], (12, 10, 1024)), torch.reshape(flip_back[:, 0:-1, :, :], (12, 10, 1024)), -1)
-            loss_equiv = torch.mean(cos_sim_equiv) * l_equiv
+                flip_back = equiv_map
+            rot_back = torchvision.transforms.functional.rotate(flip_back, 360-rot_angle)
+            cos_sim_equiv = torch.nn.functional.cosine_similarity(torch.reshape(maps[:, 0:-1, :, :], (-1, net.num_landmarks, 1024)), torch.reshape(rot_back[:, 0:-1, :, :], (-1, net.num_landmarks, 1024)), -1)
+            loss_equiv = (1 - torch.mean(cos_sim_equiv)) * l_equiv
             # loss_equiv = torch.Tensor([0.]).to(device)
 
             loss_mean = maps[:, 0:-1, :, :].mean()
 
-            total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
+            # total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
+            total_loss = loss + loss_conc + loss_max + loss_class * do_class
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -407,16 +411,19 @@ def main():
 
     basenet: ResNet = torchvision.models.resnet18(pretrained=True)
     net: Union[Net,LandmarkNet]
+
     if dataset=="WHALE":
         num_cls = 2000
     elif dataset=="CUB":
         num_cls = 250
     elif dataset=="PIM":
         num_cls = None
+
     if do_baseline:
         net = Net(basenet, num_classes=num_cls)
     else:
         net = LandmarkNet(basenet, num_landmarks, num_classes=num_cls)
+
     if warm_start:
         net.load_state_dict(torch.load(model_name_init), strict=False)
         epoch_leftoff = get_epoch(experiment) + 1

@@ -57,11 +57,11 @@ def rotate_image(rotations, image):
 
 def flip_image(image, threshold):
     flip = np.random.random()
-    if flip > threshold:
-        flip_img = torchvision.transforms.functional.vflip(image)
+    if flip < threshold:
+        flip_img = torchvision.transforms.functional.hflip(image)
     else:
         flip_img = image
-    return flip_img, flip > threshold
+    return flip_img, flip < threshold
 
 def landmarks_to_rgb(maps):
 
