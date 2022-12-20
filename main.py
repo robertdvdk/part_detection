@@ -23,14 +23,14 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_testcomp"
+experiment = "cub_fixequiv"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
 l_max = 1
 
-# l_equiv = 10
-l_equiv = 0
+l_equiv = 1
+# l_equiv = 0
 
 l_conc = 1
 
@@ -39,8 +39,8 @@ l_orth = 0
 
 l_class = 1
 
-l_comp = 1
-# l_comp = 0
+# l_comp = 1
+l_comp = 0
 
 # dataset = "WHALE"
 # dataset = "PIM"
@@ -119,9 +119,9 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
         negative, _, _, _ = net(sample[2].to(device))
 
         ### FORWARD PASS OF ROTATED IMAGES
-        # rot_img, rot_angle = rotate_image([90, 180, 270], sample[0])
-        # flip_img, is_flipped = flip_image(rot_img, 0.5)
-        # _, equiv_map, _, _ = net(flip_img.to(device))
+        rot_img, rot_angle = rotate_image([90, 180, 270], sample[0])
+        flip_img, is_flipped = flip_image(rot_img, 0.5)
+        _, equiv_map, _, _ = net(flip_img.to(device))
 
         if do_baseline:
             loss = triplet_loss(anchor, positive, negative)
@@ -181,7 +181,6 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_max = 1 - loss_max
 
             ### Orthogonality loss
-            #TODO change to cosine similarity
             # normed_feature = torch.nn.functional.normalize(anchor, dim=1)
             # similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
             # similarity = torch.sub(similarity, torch.eye(net.num_landmarks).to(device))
@@ -202,25 +201,25 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             _, _, _, comp_featuretensor = net(masked_imgs)
             masked_feature = (maps[:, random_landmark, :, :].unsqueeze(-1).permute(0,3,1,2) * comp_featuretensor).mean(2).mean(2)
             unmasked_feature = anchor[:, :, random_landmark]
-            cos_sim = torch.nn.functional.cosine_similarity(masked_feature, unmasked_feature, dim=-1)
-            comp_loss = 1 - torch.mean(cos_sim)
+            cos_sim_comp = torch.nn.functional.cosine_similarity(masked_feature.detach(), unmasked_feature, dim=-1)
+            comp_loss = 1 - torch.mean(cos_sim_comp)
             loss_comp = comp_loss * l_comp
             # loss_comp = torch.Tensor([0.]).to(device)
 
+
             ### Equivariance loss: calculate rotated landmarks distance
-            # rot_back = torchvision.transforms.functional.rotate(equiv_map, 360-rot_angle)
-            # if is_flipped:
-            #     flip_back = torchvision.transforms.functional.vflip(rot_back)
-            # else:
-            #     flip_back = rot_back
-            # diff_equiv = torch.subtract(maps, flip_back)
-            # loss_equiv = torch.mean(torch.square(diff_equiv)) * l_equiv
-            loss_equiv = torch.Tensor([0.]).to(device)
+            rot_back = torchvision.transforms.functional.rotate(equiv_map, 360-rot_angle)
+            if is_flipped:
+                flip_back = torchvision.transforms.functional.vflip(rot_back)
+            else:
+                flip_back = rot_back
+            cos_sim_equiv = torch.nn.functional.cosine_similarity(torch.reshape(maps[:, 0:-1, :, :], (12, 10, 1024)), torch.reshape(flip_back[:, 0:-1, :, :], (12, 10, 1024)), -1)
+            loss_equiv = torch.mean(cos_sim_equiv) * l_equiv
+            # loss_equiv = torch.Tensor([0.]).to(device)
 
             loss_mean = maps[:, 0:-1, :, :].mean()
 
-            # total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
-            total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth
+            total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
