@@ -178,7 +178,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_conc_x = (loc_x.unsqueeze(-1).unsqueeze(-1) - grid_x) ** 2
             loss_conc_y = (loc_y.unsqueeze(-1).unsqueeze(-1) - grid_y) ** 2
             loss_conc = ((loss_conc_x + loss_conc_y)) * maps
-            loss_conc = (loss_conc[:, 0:-1, :, :].mean()) * loss_conc
+            loss_conc = (loss_conc[:, 0:-1, :, :].mean()) * l_conc
 
             loss_max = maps.max(-1)[0].max(-1)[0].mean()
             loss_max = 1 - loss_max
