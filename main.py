@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_test_all_losses"
+experiment = "cub_conc_div4"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
@@ -32,7 +32,7 @@ l_max = 1
 l_equiv = 1
 # l_equiv = 0
 
-l_conc = 1
+l_conc = 0.25
 
 l_orth = 1
 # l_orth = 0
