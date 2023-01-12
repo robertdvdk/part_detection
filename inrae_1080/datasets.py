@@ -155,36 +155,44 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         """
         self.mode = mode
         self.data_path: str = data_path
-        self.alt_data_path: Optional[str] = alt_data_path
 
-        annFile = os.path.join(data_path, f"{mode}.json")
+        dataset = pd.read_csv(data_path + "/" + "dataset.txt", sep='\t', names=["index", "test", "class", "filename"])
 
-        coco = COCO(annFile)
-        self.coco = coco
+        if mode=="train":
+            self.dataset = dataset.loc[dataset['test']==0]
+        elif mode=='test':
+            self.dataset = dataset.loc[dataset['test']==1]
 
-        self.unique_label_names = sorted(list({ x['supercategory'] for x in coco.cats.values()    }))
-        coco.imgToLabels = dict()
-        for id,anns in coco.imgToAnns.items():
-            # start of this img
-            supercats = []
-            for ann in anns:
-                cat_id = ann['category_id']
-                supercat = coco.cats[cat_id]['supercategory']
-                supercats.append(supercat)
-                # break # remove break for sanity check if needed
-            # print(supercats) # print for sanity check if needed
-            if not len(set(supercats)) <= 1:
-                raise RuntimeError("Not all superclasses in this img are the same")
-            supercat=supercats[0]
-            coco.imgToLabels[id] = supercat
-
-        self.label_ids = np.array([y[1] for y in sorted(coco.imgToLabels.items(),key = lambda x: x[0])])
-        self.labels = np.array([self.unique_label_names.index(x) for x in self.label_ids])
-        # self.label_ids = list(range(len(self.labels)))
-        # self.unique_labels=list(set(self.labels))
-
-        self.height: int = height
-        print("done creating labels")
+        # self.alt_data_path: Optional[str] = alt_data_path
+        #
+        # annFile = os.path.join(data_path, f"{mode}.json")
+        #
+        # coco = COCO(annFile)
+        # self.coco = coco
+        #
+        # self.unique_label_names = sorted(list({ x['supercategory'] for x in coco.cats.values()    }))
+        # coco.imgToLabels = dict()
+        # for id,anns in coco.imgToAnns.items():
+        #     # start of this img
+        #     supercats = []
+        #     for ann in anns:
+        #         cat_id = ann['category_id']
+        #         supercat = coco.cats[cat_id]['supercategory']
+        #         supercats.append(supercat)
+        #         # break # remove break for sanity check if needed
+        #     # print(supercats) # print for sanity check if needed
+        #     if not len(set(supercats)) <= 1:
+        #         raise RuntimeError("Not all superclasses in this img are the same")
+        #     supercat=supercats[0]
+        #     coco.imgToLabels[id] = supercat
+        #
+        # self.label_ids = np.array([y[1] for y in sorted(coco.imgToLabels.items(),key = lambda x: x[0])])
+        # self.labels = np.array([self.unique_label_names.index(x) for x in self.label_ids])
+        # # self.label_ids = list(range(len(self.labels)))
+        # # self.unique_labels=list(set(self.labels))
+        #
+        # self.height: int = height
+        # print("done creating labels")
 
 
     def debug_readout(self):
@@ -259,26 +267,28 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         return masks
 
     def __len__(self) -> int:
-        return len(self.labels)
+        print(self.dataset)
+        return len(self.dataset['index'])
 
 
     def __getitem__(self, idx: int) -> Tuple[ndarray,Any]:
-        img = self.coco.loadImgs([idx])[0]
-        img_filename = img['file_name']
-        img_filename_prefix = img_filename.split("_")[0]
-        filename = os.path.join(self.data_path,self.mode,img_filename_prefix,img['file_name'])
-
-        im = imread(filename)
-
-        im = resize(im, (self.height,self.height), anti_aliasing=True)
-
-        label: Any = self.labels[idx]
-
-        if len(im.shape) == 2:
-            im = np.stack((im,) * 3, axis=-1)
-
-        im = np.float32(np.transpose(im, axes=(2, 0, 1))) / 255
-        return im, label
+        im = imread(os.path.join())
+        # img = self.coco.loadImgs([idx])[0]
+        # img_filename = img['file_name']
+        # img_filename_prefix = img_filename.split("_")[0]
+        # filename = os.path.join(self.data_path,self.mode,img_filename_prefix,img['file_name'])
+        #
+        # im = imread(filename)
+        #
+        # im = resize(im, (self.height,self.height), anti_aliasing=True)
+        #
+        # label: Any = self.labels[idx]
+        #
+        # if len(im.shape) == 2:
+        #     im = np.stack((im,) * 3, axis=-1)
+        #
+        # im = np.float32(np.transpose(im, axes=(2, 0, 1))) / 255
+        # return im, label
 
 
 class PartImageNetTripletDataset(WhaleTripletDataset):
@@ -396,8 +406,14 @@ if __name__=='__main__':
     # print(msk)
 
     cub = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='train')
-    cub_val = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='val', train_samples=cub.trainsamples)
+    # cub_val = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='val', train_samples=cub.trainsamples)
+    #
+    #
+    # cub_trainloader = torch.utils.data.DataLoader(dataset=cub, batch_size=batch_size, shuffle=True, num_workers=4)
+    # cub_valloader = torch.utils.data.DataLoader(dataset=cub_val, batch_size=batch_size, shuffle=False, num_workers=4)
 
-
-    cub_trainloader = torch.utils.data.DataLoader(dataset=cub, batch_size=batch_size, shuffle=True, num_workers=4)
-    cub_valloader = torch.utils.data.DataLoader(dataset=cub_val, batch_size=batch_size, shuffle=False, num_workers=4)
+    pim = PartImageNetDataset(data_path="/home/robert/project/datasets/pim", mode='train')
+    print(pim.__len__())
+    print(cub.__len__())
+    cub = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='test')
+    print(cub.__len__())

@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_equiv_orth_ncomp_maxperbatch_triplet_fewerclasses"
+experiment = "cub_equiv_orth_ncomp_maxperbatch_ntriplet_fewerclasses"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
@@ -148,18 +148,19 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                     (anchor.detach() - negative.detach()) ** 2).mean(
                 0).sum(0).sqrt() * 0.05
 
-            loss = 0
-            # loss = torch.Tensor([0.]).to(device) # triplet_loss((anchor).mean(2),(positive).mean(2),(negative).mean(2))
+            # Triplet loss
+            # loss = 0
+            loss = torch.Tensor([0.]).to(device) # triplet_loss((anchor).mean(2),(positive).mean(2),(negative).mean(2))
             # Classification loss for anchor and positive samples
             loss_class = classif_loss(scores_anchor.mean(-1), sample[3].to(
                 device)) / 2 + classif_loss(scores_pos.mean(-1), sample[3].to(device)) / 2
 
             # Triplet loss for each triplet of landmarks
-            for lm in range(anchor.shape[2]):
-                loss += triplet_loss((anchor[:, :, lm]),
-                                     (positive[:, :, lm]),
-                                     (negative[:, :, lm])) / (
-                            (anchor.shape[2] - 1))
+            # for lm in range(anchor.shape[2]):
+            #     loss += triplet_loss((anchor[:, :, lm]),
+            #                          (positive[:, :, lm]),
+            #                          (negative[:, :, lm])) / (
+            #                 (anchor.shape[2] - 1))
                 # loss_class += (classif_loss(scores_anchor[:,:,lm],sample[3].to(device))/2 + classif_loss(scores_pos[:,:,lm],sample[3].to(device))/2)/((anchor.shape[2]-1))
             
             # Classification loss using random subsets of landmarks
@@ -397,7 +398,7 @@ def main():
 
         dataset_train_triplet: PartImageNetTripletDataset = PartImageNetTripletDataset(dataset_train)
 
-        batch_size: int = 20
+        batch_size: int = 24
         train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
                                                    batch_size=batch_size, shuffle=True,
                                                    num_workers=4)
@@ -416,7 +417,7 @@ def main():
 
 
 
-        batch_size = 16
+        batch_size = 24
         train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
                                                    batch_size=batch_size, shuffle=True,
                                                    num_workers=4)

@@ -117,9 +117,37 @@ def get_epoch(experiment):
                 epoch = fepoch
     return epoch
 
+def subset_train_pim():
+    np.random.seed(1)
+    file = f"./datasets/pim/train/"
+    train = {}
+    test = {}
+    for i in os.listdir(file):
+        if not i.startswith('n'):
+            continue
+        dir = file + i + "/"
+        train[i] = []
+        test[i] = []
+        for j in os.listdir(dir):
+            if np.random.rand() < 0.1:
+                test[i].append(j)
+            else:
+                train[i].append(j)
+    id = 1
+    with open("./datasets/pim/dataset.txt", 'w') as fopen:
+        for key in train.keys():
+            for value in train[key]:
+                fopen.write(f"{id}\t0\t{key}\t{value}\n")
+                id += 1
+            for value in test[key]:
+                fopen.write(f"{id}\t1\t{key}\t{value}\n")
+                id += 1
+
+
+
 def main():
     ### Helper module, no main function
-    pass
+    subset_train_pim()
 
 if __name__ == "__main__":
     main()
