@@ -23,24 +23,25 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_conc_div4"
+experiment = "cub_equiv_orth_ncomp_maxperbatch_triplet_fewerclasses"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
 l_max = 1
+# l_max = 0
 
 l_equiv = 1
 # l_equiv = 0
 
-l_conc = 0.25
+l_conc = 1
 
 l_orth = 1
 # l_orth = 0
 
 l_class = 1
 
-l_comp = 1
-# l_comp = 0
+# l_comp = 1
+l_comp = 0
 
 # dataset = "WHALE"
 # dataset = "PIM"
@@ -146,12 +147,13 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             net.avg_dist_neg.data = net.avg_dist_neg.data * 0.95 + (
                     (anchor.detach() - negative.detach()) ** 2).mean(
                 0).sum(0).sqrt() * 0.05
-            
-            loss = 0  # triplet_loss((anchor).mean(2),(positive).mean(2),(negative).mean(2))
+
+            loss = 0
+            # loss = torch.Tensor([0.]).to(device) # triplet_loss((anchor).mean(2),(positive).mean(2),(negative).mean(2))
             # Classification loss for anchor and positive samples
             loss_class = classif_loss(scores_anchor.mean(-1), sample[3].to(
                 device)) / 2 + classif_loss(scores_pos.mean(-1), sample[3].to(device)) / 2
-            
+
             # Triplet loss for each triplet of landmarks
             for lm in range(anchor.shape[2]):
                 loss += triplet_loss((anchor[:, :, lm]),
@@ -180,8 +182,10 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_conc = ((loss_conc_x + loss_conc_y)) * maps
             loss_conc = (loss_conc[:, 0:-1, :, :].mean()) * l_conc
 
-            loss_max = maps.max(-1)[0].max(-1)[0].mean()
-            loss_max = 1 - loss_max
+            # MAX LOSS PER BATCH INSTEAD OF PER IMAGE
+            loss_max = maps.max(-1)[0].max(-1)[0].max(0)[0].mean()
+            # loss_max = maps.max(-1)[0].max(-1)[0].mean()
+            loss_max = (1 - loss_max)*l_max
 
             ### Orthogonality loss
             normed_feature = torch.nn.functional.normalize(anchor, dim=1)
@@ -222,7 +226,8 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
 
             loss_mean = maps[:, 0:-1, :, :].mean()
 
-            total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
+            total_loss = loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
+            # total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -270,7 +275,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                 running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp))
     return net, all_losses
 
-def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader, epoch):
+def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader, epoch, only_test):
     net.eval()
     net.to(device)
     pbar: tqdm = tqdm(val_loader, position=0, leave=True)
@@ -283,6 +288,7 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
     all_scores: list[Any] = []
     all_labels: list[Any] = []
     l = 0
+    all_maxes = torch.Tensor().to(device)
     for i, sample in enumerate(pbar):
         feat, maps, scores, feature_tensor = net(sample[0].to(device))
         scores = scores.detach().cpu()
@@ -333,14 +339,34 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
             loc_x = maps_x.sum(3).sum(2) / map_sums
             loc_y = maps_y.sum(3).sum(2) / map_sums
 
+            map_max = maps.max(-1)[0].max(-1)[0][:, :-1].detach()
+            all_maxes = torch.cat((all_maxes, map_max), 0)
+
+
             if np.random.random() < 0.05:
-                show_maps(sample[0], maps, loc_x, loc_y, epoch, experiment)
+                if only_test:
+                    savefig=False
+                else:
+                    savefig=True
+                show_maps(sample[0], maps, loc_x, loc_y, epoch, experiment, savefig)
 
+    top1acc = str((np.array(topk_class)==0).mean())
     top5acc = str((np.array(topk_class)<5).mean())
-
+    print(top1acc)
     print(top5acc)
-    with open(f'results_{experiment}/res.txt', 'a') as fopen:
-        fopen.write(top5acc + "\n")
+    colors = [[0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],[0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],[0, 0.75, 0.25],
+              [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],[0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],[0, 0.75, 0.25],
+              [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],[0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],[0, 0.75, 0.25]]
+    fig, axs = plt.subplots(2, 5, sharex=True, sharey=True)
+    for i in range(10):
+        axs[i//5, i%5].hist(all_maxes[:, i].cpu().numpy(), range=(0, 1), bins=25, color=colors[i])
+    plt.show()
+    if not only_test:
+        print(top1acc)
+        print(top5acc)
+        with open(f'results_{experiment}/res.txt', 'a') as fopen:
+            fopen.write(f"Top1: {top1acc} \n")
+            fopen.write(f"Top5: {top5acc} \n")
     pbar.close()
 
 def main():
@@ -365,12 +391,13 @@ def main():
                                                  batch_size=batch_size, shuffle=False,
                                                  num_workers=4)
     elif dataset == "PIM":
+        np.random.seed(1)
         dataset_train: WhaleDataset = PartImageNetDataset(pim_path,mode='train')
         dataset_val: WhaleDataset = PartImageNetDataset(pim_path,mode='val')
 
         dataset_train_triplet: PartImageNetTripletDataset = PartImageNetTripletDataset(dataset_train)
 
-        batch_size: int = 12
+        batch_size: int = 20
         train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
                                                    batch_size=batch_size, shuffle=True,
                                                    num_workers=4)
@@ -389,7 +416,7 @@ def main():
 
 
 
-        batch_size = 12
+        batch_size = 16
         train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
                                                    batch_size=batch_size, shuffle=True,
                                                    num_workers=4)
@@ -414,9 +441,9 @@ def main():
     if dataset=="WHALE":
         num_cls = 2000
     elif dataset=="CUB":
-        num_cls = 250
+        num_cls = 200
     elif dataset=="PIM":
-        num_cls = None
+        num_cls = 160
 
     if do_baseline:
         net = Net(basenet, num_classes=num_cls)
@@ -431,6 +458,7 @@ def main():
     net.to(device)
 
     if do_only_test:
+        epoch_leftoff = 0
         number_epochs = 1
 
     all_losses = []
@@ -441,11 +469,11 @@ def main():
             else:
                 net, all_losses = train(net, train_loader, device, do_baseline, model_name, epoch, epoch_leftoff)
             print(f'Validation accuracy in epoch {epoch}:')
-            validation(device, do_baseline, net, val_loader, epoch)
+            validation(device, do_baseline, net, val_loader, epoch, do_only_test)
         # Validation
         else:
             print('Validation accuracy with saved network:')
-            validation(device, do_baseline, net, val_loader, epoch)
+            validation(device, do_baseline, net, val_loader, epoch, do_only_test)
 
 if __name__=="__main__":
     main()

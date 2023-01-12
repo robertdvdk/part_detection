@@ -81,7 +81,7 @@ def landmarks_to_rgb(maps):
 
     return rgb
 
-def show_maps(ims,maps,loc_x,loc_y, epoch, experiment):
+def show_maps(ims,maps,loc_x,loc_y, epoch, experiment, savefig=False):
     ''' Plot images, attention maps and landmark centroids.
     Args:
     ims: Torch tensor of images, [batch,3,width_im,height_im]
@@ -100,9 +100,12 @@ def show_maps(ims,maps,loc_x,loc_y, epoch, experiment):
             ax.scatter(loc_y[i,0:-1].detach().cpu()*256/maps.shape[-1],loc_x[i,0:-1].detach().cpu()*256/maps.shape[-1],c=colors[0:loc_x.shape[1]-1],marker='x')
         i += 1
 
-    plt.savefig(f'./results_{experiment}/{epoch}_{np.random.randint(0, 10)}')
+    if savefig==False:
+        plt.show()
+    else:
+        plt.savefig(f'./results_{experiment}/{epoch}_{np.random.randint(0, 10)}')
 
-    # plt.show()
+
 
 def get_epoch(experiment):
     files = os.listdir(f'results_{experiment}')

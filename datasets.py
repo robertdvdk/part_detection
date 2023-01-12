@@ -329,7 +329,8 @@ class CUBDataset(torch.utils.data.Dataset):
         # images to the list of image IDs
         self.ids = np.array(dataset['id'])
         self.names = np.array(dataset['filename'])
-        self.labels = np.array(dataset['label'])
+        # Subtract 1 because classes run from 1-200 instead of 0-199
+        self.labels = np.array(dataset['label']) - 1
         parts = {}
         for i in self.ids:
             parts[i] = image_parts[image_parts['id'] == i]

@@ -61,7 +61,7 @@ class LandmarkNet(torch.nn.Module):
         self.fc_landmarks: Conv2d = torch.nn.Conv2d(512, num_landmarks + 1, 1,
                                             bias=False)
 
-        # Had to be bit higher than number of classes due to CUDA device side assert error
+        # Has to be bit higher than number of classes due to CUDA device side assert error
         self.fc_class: Linear = torch.nn.Linear(300, num_classes, bias=False)
         # self.landmark_mask = torch.nn.Parameter(torch.zeros(1,300,10-1))
         # torch.nn.init.normal_(self.landmark_mask,std=1)
