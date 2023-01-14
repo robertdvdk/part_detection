@@ -2,7 +2,8 @@ import torch
 from torch import Tensor
 from torch.nn import Conv2d, BatchNorm2d, ReLU, MaxPool2d, Sequential, AdaptiveAvgPool2d, Linear, Softmax2d, Parameter
 from torchvision.models.resnet import ResNet
-from typing import Tuple
+from typing import Tuple, Optional
+from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
 
 # Baseline model, a modified ResNet with reduced downsampling for a spatially larger feature tensor in the last layer
 class Net(torch.nn.Module):
@@ -42,6 +43,7 @@ class Net(torch.nn.Module):
 class LandmarkNet(torch.nn.Module):
     def __init__(self, init_model: ResNet, num_landmarks: int=8, num_classes: int=2000) -> None:
         super().__init__()
+
         self.num_landmarks = num_landmarks
         self.conv1: Conv2d = init_model.conv1
         self.bn1: BatchNorm2d = init_model.bn1
@@ -60,17 +62,17 @@ class LandmarkNet(torch.nn.Module):
         self.fc_landmarks: Conv2d = torch.nn.Conv2d(512, num_landmarks + 1, 1,
                                             bias=False)
 
-
-        self.fc_class_landmarks: Linear = torch.nn.Linear(300, num_classes, bias=False)
+        self.mha = torch.nn.MultiheadAttention(embed_dim=310, num_heads=1, bias=False)
         self.fc_class_attention: Linear = torch.nn.Linear(300 + self.num_landmarks, num_classes, bias=False)
+        self.fc_class_landmarks: Linear = torch.nn.Linear(300, num_classes, bias=False)
+
 
         self.softmax: Softmax2d = torch.nn.Softmax2d()
-        self.avg_dist_pos: Parameter = torch.nn.Parameter(torch.zeros([num_landmarks]),
-                                               requires_grad=False)
-        self.avg_dist_neg: Parameter = torch.nn.Parameter(torch.zeros([num_landmarks]),
-                                               requires_grad=False)
+        # self.avg_dist_pos = torch.nn.Parameter(torch.zeros([num_landmarks]), requires_grad=False)
+        # self.avg_dist_neg: Parameter = torch.nn.Parameter(torch.zeros([num_landmarks]),
+        #                                        requires_grad=False)
 
-        self.mha = torch.nn.MultiheadAttention(embed_dim=(300 + self.num_landmarks), num_heads=1, batch_first=True)
+
 
     def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         x = self.conv1(x)
@@ -84,7 +86,7 @@ class LandmarkNet(torch.nn.Module):
         # Compute per landmark attention maps
         maps: Tensor = self.fc_landmarks(x)
         maps = self.softmax(maps)
-        
+
         # Use maps to get weighted average features per landmark
         x = self.fc(x)
         feature_tensor: Tensor = x
@@ -96,6 +98,12 @@ class LandmarkNet(torch.nn.Module):
         att = torch.mean(att, dim=1)
 
         y: Tensor = self.fc_class_landmarks(x.permute(0, 2, 1)).permute(0, 2, 1)
+
+        # classification = torch.Tensor([0.])
         classification = self.fc_class_attention(att)
+
         # x: feature vectors. y: classification results
+        # return x, maps, y, feature_tensor
         return x, maps, y, feature_tensor, classification
+
+

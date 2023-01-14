@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_test"
+experiment = "cub_test2"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
@@ -50,7 +50,7 @@ dataset = "CUB"
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, epoch_leftoff, all_losses: list = None):
     # Training
     if all_losses:
-        running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp = all_losses
+        running_loss_class, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class_lnd, running_loss_equiv, running_loss_orth, running_loss_class_att = all_losses
     elif not all_losses and epoch != 0:
         print('Please pass the losses of the previous epoch to the training function')
     triplet_loss = torch.nn.TripletMarginLoss(margin=1.0, p=2)
@@ -66,17 +66,16 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
     for i in range(len(train_loader)):
         sample = next(iter_loader)
         with torch.no_grad():
+            # anchor, _, _, _ = net(sample[0].to(device))
             anchor, _, _, _, _ = net(sample[0].to(device))
             all_training_vectors.append(anchor.cpu())
             all_training_labels.append(sample[3])
         ### DATA AUGMENTATION PROCEDURES
         # Data augmentation 1: Flip the positive and the anchor
         # Do not use classif loss, since it would look like a different individual
-        do_class = 1
         if np.random.rand() > 0.5:
             sample[0] = sample[0].flip(-1)
             sample[1] = sample[1].flip(-1)
-            do_class = 0
         # Data augmentation 2: Flip the negative
         if np.random.rand() > 0.5:
             sample[2] = sample[2].flip(-1)
@@ -115,6 +114,10 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                                                              shear=0)
 
         ### FORWARD PASS OF TRIPLET
+        # anchor, maps, scores_anchor, feature_tensor = net(sample[0].to(device))
+        # positive, _, scores_pos, _ = net(sample[1].to(device))
+        # negative, _, _, _= net(sample[2].to(device))
+
         anchor, maps, scores_anchor, feature_tensor, classif_anchor = net(sample[0].to(device))
         positive, _, scores_pos, _, classif_pos = net(sample[1].to(device))
         negative, _, _, _, _= net(sample[2].to(device))
@@ -125,6 +128,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             flip_img, is_flipped = flip_image(rot_img, 1)
         else:
             flip_img, is_flipped = flip_image(rot_img, 0.5)
+        # _, equiv_map, _, _ = net(flip_img.to(device))
         _, equiv_map, _, _, _ = net(flip_img.to(device))
 
         if do_baseline:
@@ -132,7 +136,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_class = classif_loss(scores_anchor, sample[3].to(
                 device)) / 2 + classif_loss(scores_pos,
                                             sample[3].to(device)) / 2
-            total_loss = loss + 10 * loss_class * do_class
+            total_loss = loss + 10 * loss_class
             loss_conc = total_loss.detach() * 0
             loss_max = total_loss.detach() * 0
             loss_mean = total_loss.detach() * 0
@@ -141,20 +145,26 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss_comp = total_loss.detach() * 0
         else:
             # Keep track of average distances between postives and negatives
-            net.avg_dist_pos.data = net.avg_dist_pos.data * 0.95 + (
-                    (anchor.detach() - positive.detach()) ** 2).mean(
-                0).sum(0).sqrt() * 0.05
-            net.avg_dist_neg.data = net.avg_dist_neg.data * 0.95 + (
-                    (anchor.detach() - negative.detach()) ** 2).mean(
-                0).sum(0).sqrt() * 0.05
+            # net.avg_dist_pos.data = net.avg_dist_pos.data * 0.95 + (
+            #         (anchor.detach() - positive.detach()) ** 2).mean(
+            #     0).sum(0).sqrt() * 0.05
+            # net.avg_dist_neg.data = net.avg_dist_neg.data * 0.95 + (
+            #         (anchor.detach() - negative.detach()) ** 2).mean(
+            #     0).sum(0).sqrt() * 0.05
 
             # Triplet loss
             # loss = 0
             loss = torch.Tensor([0.]).to(device) # triplet_loss((anchor).mean(2),(positive).mean(2),(negative).mean(2))
             # Classification loss for anchor and positive samples
-            loss_class = classif_loss(scores_anchor.mean(-1), sample[3].to(
-                device)) / 4 + classif_loss(scores_pos.mean(-1), sample[3].to(device)) / 4 + classif_loss(classif_anchor, sample[3].to(device)) / 4 + classif_loss(classif_pos, sample[3].to(device)) / 4
+            loss_class_landmarks = classif_loss(scores_anchor.mean(-1), sample[3].to(
+                device)) / 4 + classif_loss(scores_pos.mean(-1), sample[3].to(device)) / 4
+            loss_class_attention = (classif_loss(classif_anchor, sample[3].to(device)) / 4 + classif_loss(classif_pos, sample[3].to(device)) / 4)
 
+            # loss_class = torch.Tensor([0.]).to(device)
+            loss_class = loss_class_landmarks + loss_class_attention
+            if np.random.rand() < 0.1:
+                print(loss_class_landmarks)
+                print(loss_class_attention)
             # Triplet loss for each triplet of landmarks
             # for lm in range(anchor.shape[2]):
             #     loss += triplet_loss((anchor[:, :, lm]),
@@ -163,17 +173,19 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             #                 (anchor.shape[2] - 1))
                 # loss_class += (classif_loss(scores_anchor[:,:,lm],sample[3].to(device))/2 + classif_loss(scores_pos[:,:,lm],sample[3].to(device))/2)/((anchor.shape[2]-1))
 
+
             # Classification loss using random subsets of landmarks
-            for drops in range(0):
-                # dropout_mask = (torch.rand(1,1,scores_anchor.shape[-1])>np.random.rand()*0.5).float().to(device)
-                dropout_mask = (torch.rand(1, 1, scores_anchor.shape[-1]) > 0.5).float().to(device)
-                d = 1 / (dropout_mask.mean() + 1e-6)
-                loss_class += classif_loss(
-                    (dropout_mask * scores_anchor).mean(-1) * d,
-                    sample[3].to(device)) / 10
-                loss_class += classif_loss(
-                    (dropout_mask * scores_pos).mean(-1) * d,
-                    sample[3].to(device)) / 10
+            # for drops in range(0):
+            #     # dropout_mask = (torch.rand(1,1,scores_anchor.shape[-1])>np.random.rand()*0.5).float().to(device)
+            #     dropout_mask = (torch.rand(1, 1, scores_anchor.shape[-1]) > 0.5).float().to(device)
+            #     d = 1 / (dropout_mask.mean() + 1e-6)
+            #     loss_class += classif_loss(
+            #         (dropout_mask * scores_anchor).mean(-1) * d,
+            #         sample[3].to(device)) / 10
+            #     loss_class += classif_loss(
+            #         (dropout_mask * scores_pos).mean(-1) * d,
+            #         sample[3].to(device)) / 10
+
             # Get landmark coordinates
             loc_x, loc_y, grid_x, grid_y = landmark_coordinates(maps, device)
 
@@ -206,6 +218,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             # Permute dimensions: sample[0] is 12x3x256x256, random_map is 12x256x256
             # permute sample[0] to 3x12x256x256 so we can multiply them
             masked_imgs = torch.permute((torch.permute(sample[0], (1, 0, 2, 3))).to(device) * mask, (1, 0, 2, 3))
+            # _, _, _, comp_featuretensor = net(masked_imgs)
             _, _, _, comp_featuretensor, _ = net(masked_imgs)
             masked_feature = (maps[:, random_landmark, :, :].unsqueeze(-1).permute(0,3,1,2) * comp_featuretensor).mean(2).mean(2)
             unmasked_feature = anchor[:, :, random_landmark]
@@ -227,24 +240,24 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
 
             loss_mean = maps[:, 0:-1, :, :].mean()
 
-            total_loss = loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
-            # total_loss = loss + loss_conc + loss_max + loss_class * do_class + loss_equiv + loss_orth + loss_comp
+            total_loss = loss_conc + loss_max + loss_class + loss_equiv + loss_orth + loss_comp
+            # total_loss = loss + loss_conc + loss_max + loss_class + loss_equiv + loss_orth + loss_comp
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
         if epoch == epoch_leftoff and i == 0:
-            running_loss = loss.item()
+            running_loss_class = loss_class.item()
             running_loss_conc = loss_conc.item()
             running_loss_mean = loss_mean.item()
             running_loss_max = loss_max.item()
-            running_loss_class = loss_class.item()
+            running_loss_class_lnd = loss_class_landmarks.item()
             running_loss_equiv = loss_equiv.item()
             running_loss_orth = loss_orth.item()
-            running_loss_comp = loss_comp.item()
-
+            running_loss_class_att = loss_class_attention.item()
+            # running_loss_class_att = 0
         else:
             # noinspection PyUnboundLocalVariable
-            running_loss = 0.99 * running_loss + 0.01 * loss.item()
+            running_loss_class = 0.99 * running_loss_class + 0.01 * loss_class.item()
             # noinspection PyUnboundLocalVariable
             running_loss_conc = 0.99 * running_loss_conc + 0.01 * loss_conc.item()
             # noinspection PyUnboundLocalVariable
@@ -252,28 +265,29 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             # noinspection PyUnboundLocalVariable
             running_loss_max = 0.99 * running_loss_max + 0.01 * loss_max.item()
             # noinspection PyUnboundLocalVariable
-            running_loss_class = 0.99 * running_loss_class + 0.01 * loss_class.item()
+            running_loss_class_lnd = 0.99 * running_loss_class_lnd + 0.01 * loss_class_landmarks.item()
 
             running_loss_equiv = 0.99 * running_loss_equiv + 0.01 * loss_equiv.item()
 
             running_loss_orth = 0.99 * running_loss_orth + 0.01 * loss_orth.item()
 
-            running_loss_comp = 0.99 * running_loss_comp + 0.01 * loss_comp.item()
+            running_loss_class_att = 0.99 * running_loss_class_att + 0.01 * loss_class_attention.item()
+            # running_loss_class_att = 0
             # running_loss_masked_diff = 0.99*running_loss_masked_diff + 0.01*loss_masked_diff.item()
         pbar.set_description(
-            "T: %.3f, Cnc: %.3f, M: %.3f, Cls: %.3f, Eq: %.3f, Or: %.3f, Cmp: %.3f" % (
-                running_loss, running_loss_conc,
-                running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp))
+            "Cls: %.3f, Cnc: %.3f, M: %.3f, Lnd: %.3f, Eq: %.3f, Or: %.3f, Att: %.3f" % (
+                running_loss_class, running_loss_conc,
+                running_loss_max, running_loss_class_lnd, running_loss_equiv, running_loss_orth, running_loss_class_att))
 
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), model_name)
-    all_losses = running_loss, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp
+    all_losses = running_loss_class, running_loss_conc, running_loss_mean, running_loss_max, running_loss_class_lnd, running_loss_equiv, running_loss_orth, running_loss_class_att
     with open(f'./results_{experiment}/res.txt', 'a') as fopen:
         fopen.write(f'Epoch: {epoch}\n')
-        fopen.write("T: %.3f, Cnc: %.3f, M: %.3f, Cls: %.3f, Eq: %.3f, Or: %.3f, Cmp: %.3f\n" % (
-                running_loss, running_loss_conc,
-                running_loss_max, running_loss_class, running_loss_equiv, running_loss_orth, running_loss_comp))
+        fopen.write("Cls: %.3f, Cnc: %.3f, M: %.3f, Lnd: %.3f, Eq: %.3f, Or: %.3f, Att: %.3f\n" % (
+                running_loss_class, running_loss_conc,
+                running_loss_max, running_loss_class_lnd, running_loss_equiv, running_loss_orth, running_loss_class_att))
     return net, all_losses
 
 def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, val_loader: torch.utils.data.DataLoader, epoch, only_test):
@@ -307,8 +321,9 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
                     float(sorted_scores[0] - sorted_scores[1]))
         else:
             for j in range(classification.shape[0]):
-                sorted_classification = classification[j, :].softmax(0).sort(descending=True)
-                topk_class.append(list(sorted_classification).index(lab[j]))
+                sorted_classification, sorted_indices = classification[j, :].softmax(0).sort(descending=True)
+                topk_class.append(list(sorted_indices).index(lab[j]))
+                top_class.append(sorted_indices[0])
 
             # for j in range(scores.shape[0]):
             #     sorted_scores, sorted_indeces = scores[j, :, :].mean(
