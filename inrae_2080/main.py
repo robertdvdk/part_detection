@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_equiv_orth_ncomp_maxperbatch_ntriplet_fewerclasses"
+experiment = "pim_test_50"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
@@ -44,8 +44,8 @@ l_class = 1
 l_comp = 0
 
 # dataset = "WHALE"
-# dataset = "PIM"
-dataset = "CUB"
+dataset = "PIM"
+# dataset = "CUB"
 
 def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, device: torch.device, do_baseline: bool, model_name: str,epoch: int, epoch_leftoff, all_losses: list = None):
     # Training
@@ -353,15 +353,16 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
 
     top1acc = str((np.array(topk_class)==0).mean())
     top5acc = str((np.array(topk_class)<5).mean())
-    print(top1acc)
-    print(top5acc)
     colors = [[0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],[0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],[0, 0.75, 0.25],
               [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],[0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],[0, 0.75, 0.25],
               [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],[0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],[0, 0.75, 0.25]]
-    fig, axs = plt.subplots(2, 5, sharex=True, sharey=True)
-    for i in range(10):
-        axs[i//5, i%5].hist(all_maxes[:, i].cpu().numpy(), range=(0, 1), bins=25, color=colors[i])
-    plt.show()
+    show_plots = False
+    if show_plots:
+        fig, axs = plt.subplots(2, 5, sharex=True, sharey=True)
+        for i in range(10):
+            axs[i // 5, i % 5].hist(all_maxes[:, i].cpu().numpy(),
+                                    range=(0, 1), bins=25, color=colors[i])
+        plt.show()
     if not only_test:
         print(top1acc)
         print(top5acc)
@@ -395,10 +396,9 @@ def main():
         np.random.seed(1)
         dataset_train: WhaleDataset = PartImageNetDataset(pim_path,mode='train')
         dataset_val: WhaleDataset = PartImageNetDataset(pim_path,mode='val')
-
         dataset_train_triplet: PartImageNetTripletDataset = PartImageNetTripletDataset(dataset_train)
 
-        batch_size: int = 24
+        batch_size: int = 16
         train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
                                                    batch_size=batch_size, shuffle=True,
                                                    num_workers=4)
@@ -434,7 +434,7 @@ def main():
     do_only_test: bool = False
 
     do_baseline: bool = False
-    num_landmarks: int = 10
+    num_landmarks: int = 50
 
     basenet: ResNet = torchvision.models.resnet18(pretrained=True)
     net: Union[Net,LandmarkNet]
@@ -444,7 +444,7 @@ def main():
     elif dataset=="CUB":
         num_cls = 200
     elif dataset=="PIM":
-        num_cls = 160
+        num_cls = 109
 
     if do_baseline:
         net = Net(basenet, num_classes=num_cls)

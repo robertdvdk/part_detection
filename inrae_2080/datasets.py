@@ -156,12 +156,19 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         self.mode = mode
         self.data_path: str = data_path
 
-        dataset = pd.read_csv(data_path + "/" + "dataset.txt", sep='\t', names=["index", "test", "class", "filename"])
+
+        dataset = pd.read_csv(data_path + "/" + "dataset.txt", sep='\t', names=["id", "test", "label", "filename"])
 
         if mode=="train":
-            self.dataset = dataset.loc[dataset['test']==0]
-        elif mode=='test':
-            self.dataset = dataset.loc[dataset['test']==1]
+            dataset = dataset.loc[dataset['test']==0]
+        elif mode=='val':
+            dataset = dataset.loc[dataset['test']==1]
+        print(len(dataset))
+        self.test = np.array(dataset['test'])
+        self.ids = np.array(dataset['id'])
+        self.labels = np.array(dataset['label'])
+        self.names = np.array(dataset['filename'])
+        self.height = height
 
         # self.alt_data_path: Optional[str] = alt_data_path
         #
@@ -267,12 +274,23 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         return masks
 
     def __len__(self) -> int:
-        print(self.dataset)
-        return len(self.dataset['index'])
+        return len(self.ids)
 
 
     def __getitem__(self, idx: int) -> Tuple[ndarray,Any]:
-        im = imread(os.path.join())
+        if self.mode=="train":
+            im = imread(os.path.join(self.data_path, "train_train", self.names[idx]))
+        elif self.mode=="val":
+            im = imread(os.path.join(self.data_path, "train_test", self.names[idx]))
+        im = resize(im, (self.height, self.height))
+        label: Any = self.labels[idx]
+
+        if len(im.shape) == 2:
+            im = np.stack((im,) * 3, axis=-1)
+
+        im = np.float32(np.transpose(im, axes=(2, 0, 1))) / 255
+
+        return im, label
         # img = self.coco.loadImgs([idx])[0]
         # img_filename = img['file_name']
         # img_filename_prefix = img_filename.split("_")[0]
@@ -405,7 +423,10 @@ if __name__=='__main__':
     # msk = party.getmasks(2)
     # print(msk)
 
-    cub = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='train')
+    cubtrain = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='train')
+    print(cubtrain.ids)
+
+    # cubtrain.__getitem__(1)
     # cub_val = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='val', train_samples=cub.trainsamples)
     #
     #
@@ -413,7 +434,10 @@ if __name__=='__main__':
     # cub_valloader = torch.utils.data.DataLoader(dataset=cub_val, batch_size=batch_size, shuffle=False, num_workers=4)
 
     pim = PartImageNetDataset(data_path="/home/robert/project/datasets/pim", mode='train')
-    print(pim.__len__())
-    print(cub.__len__())
-    cub = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='test')
-    print(cub.__len__())
+    print(pim.ids)
+    print(pim.names)
+    print(np.mean(pim.test))
+    # im, label = pim.__getitem__(1)
+    # plt.imshow(np.transpose(im, (1, 2, 0)) * 255)
+    # print(label)
+    # plt.show()

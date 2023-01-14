@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_equiv_orth_ncomp_maxperbatch_ntriplet_fewerclasses"
+experiment = "cub_test"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
@@ -66,7 +66,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
     for i in range(len(train_loader)):
         sample = next(iter_loader)
         with torch.no_grad():
-            anchor, _, _, _ = net(sample[0].to(device))
+            anchor, _, _, _, _ = net(sample[0].to(device))
             all_training_vectors.append(anchor.cpu())
             all_training_labels.append(sample[3])
         ### DATA AUGMENTATION PROCEDURES
@@ -87,7 +87,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                 sample[2] = sample[0].flip(-1)
             else:
                 sample[2] = sample[1].flip(-1)
-        
+
         # Data augmentation 4: random transform anchor, positive and negative
         angle = np.random.randn() * 0.1
         scale = np.random.rand() * 0.2 + 0.9
@@ -115,9 +115,9 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
                                                              shear=0)
 
         ### FORWARD PASS OF TRIPLET
-        anchor, maps, scores_anchor, feature_tensor = net(sample[0].to(device))
-        positive, _, scores_pos, _ = net(sample[1].to(device))
-        negative, _, _, _ = net(sample[2].to(device))
+        anchor, maps, scores_anchor, feature_tensor, classif_anchor = net(sample[0].to(device))
+        positive, _, scores_pos, _, classif_pos = net(sample[1].to(device))
+        negative, _, _, _, _= net(sample[2].to(device))
 
         ### FORWARD PASS OF ROTATED IMAGES
         rot_img, rot_angle = rotate_image([0, 90, 180, 270], sample[0])
@@ -125,7 +125,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             flip_img, is_flipped = flip_image(rot_img, 1)
         else:
             flip_img, is_flipped = flip_image(rot_img, 0.5)
-        _, equiv_map, _, _ = net(flip_img.to(device))
+        _, equiv_map, _, _, _ = net(flip_img.to(device))
 
         if do_baseline:
             loss = triplet_loss(anchor, positive, negative)
@@ -153,7 +153,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             loss = torch.Tensor([0.]).to(device) # triplet_loss((anchor).mean(2),(positive).mean(2),(negative).mean(2))
             # Classification loss for anchor and positive samples
             loss_class = classif_loss(scores_anchor.mean(-1), sample[3].to(
-                device)) / 2 + classif_loss(scores_pos.mean(-1), sample[3].to(device)) / 2
+                device)) / 4 + classif_loss(scores_pos.mean(-1), sample[3].to(device)) / 4 + classif_loss(classif_anchor, sample[3].to(device)) / 4 + classif_loss(classif_pos, sample[3].to(device)) / 4
 
             # Triplet loss for each triplet of landmarks
             # for lm in range(anchor.shape[2]):
@@ -162,7 +162,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             #                          (negative[:, :, lm])) / (
             #                 (anchor.shape[2] - 1))
                 # loss_class += (classif_loss(scores_anchor[:,:,lm],sample[3].to(device))/2 + classif_loss(scores_pos[:,:,lm],sample[3].to(device))/2)/((anchor.shape[2]-1))
-            
+
             # Classification loss using random subsets of landmarks
             for drops in range(0):
                 # dropout_mask = (torch.rand(1,1,scores_anchor.shape[-1])>np.random.rand()*0.5).float().to(device)
@@ -206,7 +206,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
             # Permute dimensions: sample[0] is 12x3x256x256, random_map is 12x256x256
             # permute sample[0] to 3x12x256x256 so we can multiply them
             masked_imgs = torch.permute((torch.permute(sample[0], (1, 0, 2, 3))).to(device) * mask, (1, 0, 2, 3))
-            _, _, _, comp_featuretensor = net(masked_imgs)
+            _, _, _, comp_featuretensor, _ = net(masked_imgs)
             masked_feature = (maps[:, random_landmark, :, :].unsqueeze(-1).permute(0,3,1,2) * comp_featuretensor).mean(2).mean(2)
             unmasked_feature = anchor[:, :, random_landmark]
             cos_sim_comp = torch.nn.functional.cosine_similarity(masked_feature.detach(), unmasked_feature, dim=-1)
@@ -291,7 +291,7 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
     l = 0
     all_maxes = torch.Tensor().to(device)
     for i, sample in enumerate(pbar):
-        feat, maps, scores, feature_tensor = net(sample[0].to(device))
+        feat, maps, scores, feature_tensor, classification = net(sample[0].to(device))
         scores = scores.detach().cpu()
         all_scores.append(scores)
         lab = sample[1]
@@ -306,26 +306,32 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
                 diff_to_second.append(
                     float(sorted_scores[0] - sorted_scores[1]))
         else:
-            for j in range(scores.shape[0]):
-                sorted_scores, sorted_indeces = scores[j, :, :].mean(
-                    -1).softmax(0).sort(descending=True)
-                topk_class.append(list(sorted_indeces).index(lab[j]))
-                top_class.append(sorted_indeces[0])
-                diff_to_second.append(
-                    float(sorted_scores[0] - sorted_scores[1]))
-            if topk_lm_class is None:
-                topk_lm_class = []
-                class_lm = []
-                for lm in range(feat.shape[2]):
-                    topk_lm_class.append([])
-                    class_lm.append([])
-            for lm in range(feat.shape[2]):
-                for j in range(scores.shape[0]):
-                    class_lm[lm].append(
-                        int(scores[j, :, lm].argmax().cpu().numpy()))
-                    topk_lm_class[lm].append(
-                        list(scores[j, :, lm].sort(descending=True)[1]).index(
-                            lab[j]))
+            for j in range(classification.shape[0]):
+                sorted_classification = classification[j, :].softmax(0).sort(descending=True)
+                topk_class.append(list(sorted_classification).index(lab[j]))
+
+            # for j in range(scores.shape[0]):
+            #     sorted_scores, sorted_indeces = scores[j, :, :].mean(
+            #         -1).softmax(0).sort(descending=True)
+            #     topk_class.append(list(sorted_indeces).index(lab[j]))
+            #     top_class.append(sorted_indeces[0])
+            #     diff_to_second.append(
+            #         float(sorted_scores[0] - sorted_scores[1]))
+            # if topk_lm_class is None:
+            #     topk_lm_class = []
+            #     class_lm = []
+            #     for lm in range(feat.shape[2]):
+            #         topk_lm_class.append([])
+            #         class_lm.append([])
+            #
+            # for lm in range(feat.shape[2]):
+            #     for j in range(scores.shape[0]):
+            #         class_lm[lm].append(
+            #             int(scores[j, :, lm].argmax().cpu().numpy()))
+            #         topk_lm_class[lm].append(
+            #             list(scores[j, :, lm].sort(descending=True)[1]).index(
+            #                 lab[j]))
+
             # Get landmark coordinates
             grid_x: Tensor
             grid_y: Tensor
@@ -358,10 +364,12 @@ def validation(device: torch.device, do_baseline: bool, net: torch.nn.Module, va
     colors = [[0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],[0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],[0, 0.75, 0.25],
               [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],[0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],[0, 0.75, 0.25],
               [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],[0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],[0, 0.75, 0.25]]
-    fig, axs = plt.subplots(2, 5, sharex=True, sharey=True)
-    for i in range(10):
-        axs[i//5, i%5].hist(all_maxes[:, i].cpu().numpy(), range=(0, 1), bins=25, color=colors[i])
-    plt.show()
+    show_plots = False
+    if show_plots:
+        fig, axs = plt.subplots(2, 5, sharex=True, sharey=True)
+        for i in range(10):
+            axs[i//5, i%5].hist(all_maxes[:, i].cpu().numpy(), range=(0, 1), bins=25, color=colors[i])
+        plt.show()
     if not only_test:
         print(top1acc)
         print(top5acc)

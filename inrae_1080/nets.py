@@ -57,25 +57,22 @@ class LandmarkNet(torch.nn.Module):
         self.layer4[0].conv1.stride = (1, 1)
         self.fc: Conv2d = torch.nn.Conv2d(512, 300, 1, bias=False)
         self.pool: AdaptiveAvgPool2d = torch.nn.AdaptiveAvgPool2d(1)
-        # self.fc_global = torch.nn.Conv2d(512,512,1)
         self.fc_landmarks: Conv2d = torch.nn.Conv2d(512, num_landmarks + 1, 1,
                                             bias=False)
 
-        # Has to be bit higher than number of classes due to CUDA device side assert error
-        self.fc_class: Linear = torch.nn.Linear(300, num_classes, bias=False)
-        # self.landmark_mask = torch.nn.Parameter(torch.zeros(1,300,10-1))
-        # torch.nn.init.normal_(self.landmark_mask,std=1)
-        # self.landmark_proj = torch.nn.Parameter(torch.Tensor(300,300,num_landmarks))
-        # torch.nn.init.kaiming_uniform_(self.landmark_proj)
-        # self.landmark_proj = torch.nn.Parameter(torch.eye(300,300).unsqueeze(-1).repeat(1,1,10-1))
-        # self.dropout = torch.nn.Dropout2d(0.5)
+
+        self.fc_class_landmarks: Linear = torch.nn.Linear(300, num_classes, bias=False)
+        self.fc_class_attention: Linear = torch.nn.Linear(300 + self.num_landmarks, num_classes, bias=False)
+
         self.softmax: Softmax2d = torch.nn.Softmax2d()
         self.avg_dist_pos: Parameter = torch.nn.Parameter(torch.zeros([num_landmarks]),
                                                requires_grad=False)
         self.avg_dist_neg: Parameter = torch.nn.Parameter(torch.zeros([num_landmarks]),
                                                requires_grad=False)
 
-    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+        self.mha = torch.nn.MultiheadAttention(embed_dim=(300 + self.num_landmarks), num_heads=1, batch_first=True)
+
+    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -92,15 +89,13 @@ class LandmarkNet(torch.nn.Module):
         x = self.fc(x)
         feature_tensor: Tensor = x
         x = (maps[:, 0:-1, :, :].unsqueeze(-1).permute(0, 4, 2, 3,1) * x.unsqueeze(-1)).mean(2).mean(2)
-        
-        # x = x * (self.landmark_mask).sigmoid()
-        # new_x = []
-        # for i in range(x.shape[-1]):
-        #    new_x.append(torch.matmul(x[:,:,i],self.landmark_proj[:,:,i]).unsqueeze(-1))
-        # x = torch.cat(new_x,2)
-        # x = x.sum(2)
-        # x = torch.nn.functional.normalize(x)
-        
-        y: Tensor = self.fc_class(x.permute(0, 2, 1)).permute(0, 2, 1)
+
+        identity = torch.eye(self.num_landmarks).repeat(x.size(dim=0), 1, 1).to(x.get_device())
+        att_input = torch.permute(torch.cat((identity, x), dim=1), (0, 2, 1))
+        att, _ = self.mha(att_input, att_input, att_input, need_weights=False)
+        att = torch.mean(att, dim=1)
+
+        y: Tensor = self.fc_class_landmarks(x.permute(0, 2, 1)).permute(0, 2, 1)
+        classification = self.fc_class_attention(att)
         # x: feature vectors. y: classification results
-        return x, maps, y, feature_tensor
+        return x, maps, y, feature_tensor, classification
