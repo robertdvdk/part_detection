@@ -38,7 +38,7 @@ l_conc = 1
 l_orth = 1
 # l_orth = 0
 
-l_class = 3
+l_class = 1
 
 # l_comp = 1
 l_comp = 0
