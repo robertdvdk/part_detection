@@ -65,14 +65,7 @@ class LandmarkNet(torch.nn.Module):
         self.mha = torch.nn.MultiheadAttention(embed_dim=310, num_heads=1, bias=False)
         self.fc_class_attention: Linear = torch.nn.Linear(300 + self.num_landmarks, num_classes, bias=False)
         self.fc_class_landmarks: Linear = torch.nn.Linear(300, num_classes, bias=False)
-
-
         self.softmax: Softmax2d = torch.nn.Softmax2d()
-        # self.avg_dist_pos = torch.nn.Parameter(torch.zeros([num_landmarks]), requires_grad=False)
-        # self.avg_dist_neg: Parameter = torch.nn.Parameter(torch.zeros([num_landmarks]),
-        #                                        requires_grad=False)
-
-
 
     def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         x = self.conv1(x)

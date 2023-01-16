@@ -97,41 +97,6 @@ class WhaleDataset(torch.utils.data.Dataset):
 
         return im, label
 
-
-class WhaleTripletDataset(torch.utils.data.Dataset):
-    """Whale dataset."""
-
-    def __init__(self, orig_dataset: WhaleDataset, height_list: Optional[List[int]] = None) -> None:
-        """
-        Args:
-            orig_dataset (Dataset): dataset
-        """
-        if height_list is None:
-            height_list = [256, 256, 256]
-        self.orig_dataset: WhaleDataset = orig_dataset
-        self.height_list: list[int] = height_list
-
-    def __len__(self) -> int:
-        return len(self.orig_dataset)
-
-    def __getitem__(self, idx: object) -> Tuple[ndarray,ndarray,int,Any,int]:
-        self.orig_dataset.height = self.height_list[0]
-        im: ndarray
-        lab: Any
-        im, lab = self.orig_dataset[idx]
-        opts: ndarray = np.where(self.orig_dataset.labels == lab)[0]
-        positive_idx: int = opts[np.random.randint(len(opts))]
-        opts = np.where(self.orig_dataset.labels != lab)[0]
-        negative_idx: int = opts[np.random.randint(len(opts))]
-        self.orig_dataset.height = self.height_list[1]
-        im_pos: ndarray
-        im_pos, _ = self.orig_dataset[positive_idx]
-        self.orig_dataset.height = self.height_list[2]
-        im_neg, lab_neg = self.orig_dataset[negative_idx]
-        return im, im_pos, im_neg, lab, lab_neg
-
-
-
 # def prep_json(train_json):
 #     for i,image in enumerate(train_json['images']):
 #         pass
@@ -156,19 +121,12 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         self.mode = mode
         self.data_path: str = data_path
 
-
-        dataset = pd.read_csv(data_path + "/" + "dataset.txt", sep='\t', names=["id", "test", "label", "filename"])
+        dataset = pd.read_csv(data_path + "/" + "dataset.txt", sep='\t', names=["index", "test", "class", "filename"])
 
         if mode=="train":
-            dataset = dataset.loc[dataset['test']==0]
-        elif mode=='val':
-            dataset = dataset.loc[dataset['test']==1]
-        print(len(dataset))
-        self.test = np.array(dataset['test'])
-        self.ids = np.array(dataset['id'])
-        self.labels = np.array(dataset['label'])
-        self.names = np.array(dataset['filename'])
-        self.height = height
+            self.dataset = dataset.loc[dataset['test']==0]
+        elif mode=='test':
+            self.dataset = dataset.loc[dataset['test']==1]
 
         # self.alt_data_path: Optional[str] = alt_data_path
         #
@@ -274,23 +232,12 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         return masks
 
     def __len__(self) -> int:
-        return len(self.ids)
+        print(self.dataset)
+        return len(self.dataset['index'])
 
 
     def __getitem__(self, idx: int) -> Tuple[ndarray,Any]:
-        if self.mode=="train":
-            im = imread(os.path.join(self.data_path, "train_train", self.names[idx]))
-        elif self.mode=="val":
-            im = imread(os.path.join(self.data_path, "train_test", self.names[idx]))
-        im = resize(im, (self.height, self.height))
-        label: Any = self.labels[idx]
-
-        if len(im.shape) == 2:
-            im = np.stack((im,) * 3, axis=-1)
-
-        im = np.float32(np.transpose(im, axes=(2, 0, 1))) / 255
-
-        return im, label
+        im = imread(os.path.join())
         # img = self.coco.loadImgs([idx])[0]
         # img_filename = img['file_name']
         # img_filename_prefix = img_filename.split("_")[0]
@@ -307,17 +254,6 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         #
         # im = np.float32(np.transpose(im, axes=(2, 0, 1))) / 255
         # return im, label
-
-
-class PartImageNetTripletDataset(WhaleTripletDataset):
-    """Whale dataset."""
-
-    def __init__(self, orig_dataset: PartImageNetDataset, height_list: Optional[List[int]] = None) -> None:
-        """
-        Args:
-            orig_dataset (Dataset): dataset
-        """
-        super().__init__(orig_dataset, height_list)
 
 class CUBDataset(torch.utils.data.Dataset):
     def __init__(self, data_path: str, mode: str = 'train', height: int=256,
@@ -392,52 +328,5 @@ class CUBDataset(torch.utils.data.Dataset):
         parts = self.parts[dataset_id]
         return parts
 
-class CUBTripletDataset(WhaleTripletDataset):
-
-    def __init__(self, orig_dataset: CUBDataset,
-                 height_list: Optional[List[int]] = None) -> None:
-        """
-        Args:
-            orig_dataset (Dataset): dataset
-        """
-        super().__init__(orig_dataset, height_list)
-
 if __name__=='__main__':
-
-    # data_path: str = "./datasets/happyWhale"
-    #
-    # dataset_train: WhaleDataset = WhaleDataset(data_path, mode='train')
-    # dataset_val: WhaleDataset = WhaleDataset(data_path, mode='val')
-    # dataset_train_triplet: WhaleTripletDataset = WhaleTripletDataset(dataset_train)
-    #
-    batch_size: int = 12
-    # train_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_train_triplet,
-    #                                            batch_size=batch_size, shuffle=True,
-    #                                            num_workers=4)
-    # val_loader: DataLoader[Any] = torch.utils.data.DataLoader(dataset=dataset_val,
-    #                                          batch_size=batch_size, shuffle=False,
-    #                                          num_workers=4)
-    #
-    # party = PartImageNetDataset("./datasets/pim",mode='train')
-    # party.__getitem__(2)
-    # msk = party.getmasks(2)
-    # print(msk)
-
-    cubtrain = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='train')
-    print(cubtrain.ids)
-
-    # cubtrain.__getitem__(1)
-    # cub_val = CUBDataset(data_path="./datasets/cub/CUB_200_2011", mode='val', train_samples=cub.trainsamples)
-    #
-    #
-    # cub_trainloader = torch.utils.data.DataLoader(dataset=cub, batch_size=batch_size, shuffle=True, num_workers=4)
-    # cub_valloader = torch.utils.data.DataLoader(dataset=cub_val, batch_size=batch_size, shuffle=False, num_workers=4)
-
-    pim = PartImageNetDataset(data_path="/home/robert/project/datasets/pim", mode='train')
-    print(pim.ids)
-    print(pim.names)
-    print(np.mean(pim.test))
-    # im, label = pim.__getitem__(1)
-    # plt.imshow(np.transpose(im, (1, 2, 0)) * 255)
-    # print(label)
-    # plt.show()
+    pass
