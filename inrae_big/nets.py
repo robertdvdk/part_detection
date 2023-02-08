@@ -211,7 +211,7 @@ class NewLandmarkNet(torch.nn.Module):
 
         identity = torch.eye(self.num_landmarks, requires_grad=True).repeat(x.size(dim=0), 1, 1).to(x.get_device())
         att_input = torch.permute(torch.cat((identity, x), dim=1), (2, 0, 1))
-        att_input = torch.cat((att_input, self.class_intoken.repeat(1, x.size(dim=0), 1)), dim=0)
+        att_input = torch.cat((self.class_intoken.repeat(1, x.size(dim=0), 1), att_input), dim=0)
         att, _ = self.mha(att_input, att_input, att_input, need_weights=False)
 
         # Classification based on the landmarks
