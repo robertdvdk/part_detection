@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # Used to name the .pt file and to store results
-experiment = "cub_2attentionhead"
+experiment = "cub_1mhablock_classtoken_dim300_dropout05_lr-3"
 if not os.path.exists(f'./results_{experiment}'):
     os.mkdir(f'./results_{experiment}')
 # Loss hyperparameters
@@ -54,9 +54,15 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
     elif not all_losses and epoch != 0:
         print('Please pass the losses of the previous epoch to the training function')
     classif_loss = torch.nn.CrossEntropyLoss()
+    # TODO reduce learning rate to 10-3
+    # TODO train resnet50 w/o landmarks
+    # TODO part localization evaluation
+    # TODO one histogram of counts per landmark, get entropy of histogram, and get entropy of average of all histograms
+
     optimizer = torch.optim.Adam(
-        [{'params': list(net.parameters())[0:-1], 'lr': 1e-4},
-         {'params': list(net.parameters())[-1:], 'lr': 1e-2}])
+        [{'params': list(net.parameters())[0:1], 'lr': 1e-3}, # nn.parameter for the class token is on the top of the list
+         {'params': list(net.parameters())[1:-4], 'lr': 1e-4},
+         {'params': list(net.parameters())[-4:], 'lr': 1e-3}])
     net.train()
     all_training_vectors = []
     all_training_labels = []
@@ -67,6 +73,7 @@ def train(net: torch.nn.Module, train_loader: torch.utils.data.DataLoader, devic
     for i in range(len(train_loader)):
         sample = next(iter_loader)
         lab = sample[1]
+
         with torch.no_grad():
             # anchor, _, _, _ = net(sample[0].to(device))
             anchor, _, _, _, _ = net(sample[0].to(device))
@@ -275,8 +282,8 @@ def validation(device: torch.device, net: torch.nn.Module, val_loader: torch.uti
         print(top1acc)
         print(top5acc)
         with open(f'results_{experiment}/res.txt', 'a') as fopen:
-            fopen.write(f"Top1: {top1acc} \n")
-            fopen.write(f"Top5: {top5acc} \n")
+            fopen.write(f"Validation top 1: {top1acc} \n")
+            fopen.write(f"Validation top 5: {top5acc} \n")
     pbar.close()
 
 def main():
@@ -285,7 +292,7 @@ def main():
     whale_path: str = "./datasets/happyWhale"
     pim_path: str = "./datasets/pim"
     cub_path: str = "./datasets/cub/CUB_200_2011"
-
+    np.random.seed(1)
     if dataset == "WHALE":
         dataset_train: WhaleDataset = WhaleDataset(whale_path, mode='train')
         dataset_val: WhaleDataset = WhaleDataset(whale_path, mode='val')
@@ -293,19 +300,16 @@ def main():
                                     alt_data_path='Teds_OSM')
 
     elif dataset == "PIM":
-        np.random.seed(1)
         dataset_train: WhaleDataset = PartImageNetDataset(pim_path,mode='train')
         dataset_val: WhaleDataset = PartImageNetDataset(pim_path,mode='val')
 
 
     elif dataset == "CUB":
-        np.random.seed(1)
         dataset_train = CUBDataset(cub_path, mode='train')
         dataset_val = CUBDataset(cub_path, mode='val', train_samples=dataset_train.trainsamples)
 
         # don't use for now
         dataset_test = CUBDataset(cub_path, mode='test')
-
 
 
     batch_size = 24

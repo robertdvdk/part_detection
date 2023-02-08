@@ -4,6 +4,7 @@ from torch.nn import Conv2d, BatchNorm2d, ReLU, MaxPool2d, Sequential, AdaptiveA
 from torchvision.models.resnet import ResNet
 from typing import Tuple, Optional
 from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
+import numpy as np
 
 # Baseline model, a modified ResNet with reduced downsampling for a spatially larger feature tensor in the last layer
 class Net(torch.nn.Module):
@@ -59,14 +60,12 @@ class LandmarkNet(torch.nn.Module):
         self.layer4[0].conv1.stride = (1, 1)
         self.fc: Conv2d = torch.nn.Conv2d(512, 300, 1, bias=False)
         self.pool: AdaptiveAvgPool2d = torch.nn.AdaptiveAvgPool2d(1)
-        self.fc_landmarks: Conv2d = torch.nn.Conv2d(512, num_landmarks + 1, 1,
-                                            bias=False)
-
-        self.mha = torch.nn.MultiheadAttention(embed_dim=310, num_heads=2, bias=False)
+        self.fc_landmarks: Conv2d = torch.nn.Conv2d(512, num_landmarks + 1, 1, bias=False)
+        self.drop = torch.nn.Dropout(0.5)
+        self.mha = torch.nn.MultiheadAttention(embed_dim=300 + self.num_landmarks, num_heads=1, bias=False, batch_first=False)
         self.fc_class_attention: Linear = torch.nn.Linear(300 + self.num_landmarks, num_classes, bias=False)
         self.fc_class_landmarks: Linear = torch.nn.Linear(300, num_classes, bias=False)
-
-
+        self.class_token = torch.nn.Parameter(torch.rand(1, 300 + self.num_landmarks))
         self.softmax: Softmax2d = torch.nn.Softmax2d()
 
     def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
@@ -86,17 +85,28 @@ class LandmarkNet(torch.nn.Module):
         x = self.fc(x)
         feature_tensor: Tensor = x
         x = (maps[:, 0:-1, :, :].unsqueeze(-1).permute(0, 4, 2, 3,1) * x.unsqueeze(-1)).mean(2).mean(2)
+        x = self.drop(x)
 
-        identity = torch.eye(self.num_landmarks).repeat(x.size(dim=0), 1, 1).to(x.get_device())
-        att_input = torch.permute(torch.cat((identity, x), dim=1), (0, 2, 1))
+
+        identity = torch.eye(self.num_landmarks, requires_grad=True).repeat(x.size(dim=0), 1, 1).to(x.get_device())
+        att_input = torch.permute(torch.cat((identity, x), dim=1), (2, 0, 1))
+        att_input = torch.cat((att_input, self.class_token.repeat(1, x.size(dim=0), 1)), dim=0)
         att, _ = self.mha(att_input, att_input, att_input, need_weights=False)
-        att = torch.mean(att, dim=1)
-
+        # att = self.relu(att)
+        # att = torch.mean(att, dim=0)
         y: Tensor = self.fc_class_landmarks(x.permute(0, 2, 1)).permute(0, 2, 1)
 
+        class_token = att[0, :, :]
+        class_token = self.drop(class_token)
+        classification = self.fc_class_attention(class_token)
         # classification = torch.Tensor([0.])
-        classification = self.fc_class_attention(att)
+        # classification = self.fc_class_attention(att)
 
+        # classification = y.mean(-1)
+        # print("Attention weights mean, min, max: ", attweights.mean().item(), attweights.min().item(), attweights.max().item())
+        #
+        # print("FC class landmarks weights: ",self.fc_class_landmarks.weight.mean().item())
+        # print("FC class att weights: ", self.fc_class_attention.weight.mean().item())
         # x: feature vectors. y: classification results
         # return x, maps, y, feature_tensor
         return x, maps, y, feature_tensor, classification

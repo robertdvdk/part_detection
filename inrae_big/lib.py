@@ -12,6 +12,8 @@ import numpy as np
 import skimage
 import matplotlib.pyplot as plt
 import os
+from scipy import stats
+import torch.nn.functional as F
 
 
 # Function definitions

@@ -5,10 +5,12 @@ import numpy as np
 import pandas as pd
 # import torch
 import skimage.draw
+import torchvision.transforms
 from numpy import ndarray
 from pandas import Series, DataFrame
 from pandas.core.arrays import ExtensionArray
 from pandas.io.parsers import TextFileReader
+import PIL.Image
 
 from skimage.io import imread
 import torch.utils.data
@@ -256,11 +258,11 @@ class PartImageNetDataset(torch.utils.data.Dataset):
         # return im, label
 
 class CUBDataset(torch.utils.data.Dataset):
-    def __init__(self, data_path: str, mode: str = 'train', height: int=256,
-                 minimum_images: int=3, alt_data_path: Optional[str] = None,
-                 train_samples = None):
+    def __init__(self, data_path, split=1, mode = 'train', height: int=256,
+                 transform = None, train_samples = None):
         self.data_path = data_path
         self.mode = mode
+        self.transform = transform
         train_test = pd.read_csv(os.path.join(data_path, 'train_test_split.txt'), delim_whitespace=True, names=['id', 'train'])
         image_names = pd.read_csv(os.path.join(data_path, 'images.txt'), delim_whitespace = True, names=['id', 'filename'])
         labels = pd.read_csv(os.path.join(data_path, 'image_class_labels.txt'), delim_whitespace=True, names=['id', 'label'])
@@ -273,9 +275,8 @@ class CUBDataset(torch.utils.data.Dataset):
             dataset = dataset.loc[dataset['train'] == 1]
             samples = np.arange(len(dataset))
             np.random.shuffle(samples)
-            self.trainsamples = samples[:int(len(samples)*0.9)]
+            self.trainsamples = samples[:int(len(samples)*split)]
             dataset = dataset.iloc[self.trainsamples]
-
         elif mode == 'test':
             dataset = dataset.loc[dataset['train'] == 0]
         elif mode == 'val':
@@ -284,10 +285,6 @@ class CUBDataset(torch.utils.data.Dataset):
                 raise RuntimeError('Please provide the list of training samples'
                                    'to the validation dataset')
             dataset = dataset.drop(dataset.index[train_samples])
-
-
-
-
 
         # training images are labelled 1, test images labelled 0. Add these
         # images to the list of image IDs
@@ -312,14 +309,18 @@ class CUBDataset(torch.utils.data.Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx: int) -> Tuple[ndarray,Any]:
+        # imread outputs height x widht
         im = imread(os.path.join(self.data_path, "images", self.names[idx]))
-        im = resize(im, (self.height, self.height))
-        label: Any = self.labels[idx]
+        # im = resize(im, (self.height, self.height))
+        label = self.labels[idx]
 
         if len(im.shape) == 2:
             im = np.stack((im,) * 3, axis=-1)
 
-        im = np.float32(np.transpose(im, axes=(2, 0, 1)))
+        if self.transform:
+            im = PIL.Image.fromarray(im)
+            im = self.transform(im)
+
 
         return im, label
 
