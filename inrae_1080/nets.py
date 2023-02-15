@@ -26,6 +26,7 @@ class Net(torch.nn.Module):
         # self.fc: Linear = torch.nn.Linear(512, 300, bias=False)
         self.fc_class: Linear = torch.nn.Linear(512, num_classes, bias=False)
 
+
     def forward(self, x: Tensor) -> Tuple[Tensor,Tensor,Tensor,Tensor]:
         x = self.conv1(x)
         x = self.bn1(x)
@@ -55,21 +56,14 @@ class LandmarkNet(torch.nn.Module):
         self.layer3: Sequential = init_model.layer3
         self.layer4: Sequential = init_model.layer4
         self.layer3[0].downsample[0].stride = (1, 1)
-        self.layer3[0].conv1.stride = (1, 1)
+        self.layer3[0].conv2.stride = (1, 1)
         self.layer4[0].downsample[0].stride = (1, 1)
-        self.layer4[0].conv1.stride = (1, 1)
+        self.layer4[0].conv2.stride = (1, 1)
         self.finalpool: AdaptiveAvgPool2d = torch.nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        self.fc: Conv2d = torch.nn.Conv2d(512, 300, 1, bias=False)
-        self.fc_class = torch.nn.Linear(300, 200, bias=False)
-        # self.pool: AdaptiveAvgPool2d = torch.nn.AdaptiveAvgPool2d(1)
-        # self.fc_landmarks: Conv2d = torch.nn.Conv2d(512, num_landmarks + 1, 1, bias=False)
-        # self.drop = torch.nn.Dropout(0.5)
+        self.fc_class = torch.nn.Linear(2048, 200, bias=False)
+        self.fc_landmarks = torch.nn.Conv2d(2048, num_landmarks + 1, 1, bias=False)
+        self.softmax = torch.nn.Softmax2d()
 
-        # self.mha = torch.nn.MultiheadAttention(embed_dim=310, num_heads=5, bias=False, batch_first=False)
-        # self.fc_class_attention: Linear = torch.nn.Linear(300 + self.num_landmarks, num_classes, bias=False)
-        # self.fc_class_landmarks: Linear = torch.nn.Linear(2000, num_classes, bias=False)
-        #
-        # self.softmax: Softmax2d = torch.nn.Softmax2d()
 
     def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         # Pretrained ResNet part of the model
@@ -82,32 +76,16 @@ class LandmarkNet(torch.nn.Module):
         x = self.layer3(x)
         x = self.layer4(x)
 
-        # # Compute per landmark attention maps
-        # maps = self.fc_landmarks(x)
-        # maps = self.softmax(maps)
-        #
-        # # Use maps to get weighted average features per landmark
-        # x = self.fc(x)
-        # feature_tensor: Tensor = x
-        # x = (maps[:, 0:-1, :, :].unsqueeze(-1).permute(0, 4, 2, 3,1) * x.unsqueeze(-1)).mean(2).mean(2)
-        # x = self.drop(x)
-        #
-        # # Use multihead attention to look at all feature vectors simultaneously and combine them
-        # # identity = torch.eye(self.num_landmarks, requires_grad=True).repeat(x.size(dim=0), 1, 1).to(x.get_device())
-        # # att_input = torch.permute(torch.cat((identity, x), dim=1), (2, 0, 1))
-        # # att, attweights = self.mha(att_input, att_input, att_input, need_weights=False)
-        # # att = torch.mean(att, dim=0)
-        #
-        # # Classification based on the landmarks
-        # y = self.fc_class_landmarks(x.permute(0, 2, 1)).permute(0, 2, 1)
-        # # Classification based on the MHA output
-        # # classification = self.fc_class_attention(att)
-        # classification = y.mean(-1)
-        x = self.finalpool(x).squeeze(-1).squeeze(-1)
-        x = self.fc(x)
-        maps = x
-        feature_tensor = x
-        y = self.fc_class(x)
-        classification = y
+        # Compute per landmark attention maps
+        maps = self.fc_landmarks(x)
+        maps = self.softmax(maps)
+
+        # Use maps to get weighted average features per landmark
+        feature_tensor: Tensor = x
+        x = (maps[:, 0:-1, :, :].unsqueeze(-1).permute(0, 4, 2, 3,1) * x.unsqueeze(-1)).mean(2).mean(2)
+
+        # Classification based on the landmarks
+        y = self.fc_class(x.permute(0, 2, 1)).permute(0, 2, 1)
+        classification = y.mean(-1)
 
         return x, maps, y, feature_tensor, classification
