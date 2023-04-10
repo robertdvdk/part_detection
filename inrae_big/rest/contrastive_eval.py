@@ -1,21 +1,14 @@
 # pytorch & misc
-import argparse
-from types import SimpleNamespace
 
-import numpy as np
-import torch
-import torch.nn.functional as F
 import torchvision.transforms as transforms
-from sklearn.linear_model import LinearRegression
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
-from sklearn.preprocessing import StandardScaler
 
 # number of attributes and landmark annotations
 from tqdm import tqdm
 from nets import NewLandmarkNet
 from torchvision.models import resnet101
 from contrastive_datasets import CUB200
-from lib import *
+from inrae_big.common.lib import *
 
 import matplotlib.pyplot as plt
 dataset_root='./datasets'
