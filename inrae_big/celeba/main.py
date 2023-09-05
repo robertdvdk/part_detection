@@ -268,7 +268,7 @@ def validation(device, net, val_loader, epoch, only_test, model_name):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='PDiscoNet trainer on CelebA'
+        description='PDiscoNet on CelebA'
     )
     parser.add_argument('--model_name', help='used to train a new model',
                         required=True)
@@ -276,17 +276,18 @@ def main():
                         help='directory that contains celeba files, must'
                              'contain folder "./unaligned"', required=True)
     parser.add_argument('--num_parts', help='number of parts to predict',
-                        default=8)
-    parser.add_argument('--lr', default=1e-4)
+                        default=8, type=int)
+    parser.add_argument('--lr', default=1e-4, type=float)
+    parser.add_argument('--batch_size', default=20, type=int)
+    parser.add_argument('--image_size', default=256, type=int)
+    parser.add_argument('--epochs', default=15, type=int)
     parser.add_argument('--pretrained_model_name', default='',
                         help='used to load pretrained model')
-    parser.add_argument('--batch_size', default=20)
-    parser.add_argument('--image_size', default=256)
-    parser.add_argument('--epochs', default=15)
+    parser.add_argument('--save_maps', default=True, type=bool)
     parser.add_argument('--warm_start', default=False,
-                        help='Whether to use a pretrained PDiscoNet')
+                        help='Whether to use a pretrained PDiscoNet', type=bool)
     parser.add_argument('--only_test', default=False,
-                        help='Whether to only eval the model')
+                        help='Whether to only eval the model', type=bool)
     args = parser.parse_args()
     if not os.path.exists(f'../results_{args.model_name}'):
         os.mkdir(f'../results_{args.model_name}')

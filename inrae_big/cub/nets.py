@@ -4,11 +4,10 @@ from torch.nn import BatchNorm2d, Softmax2d
 from torchvision.models.resnet import ResNet
 from typing import Tuple
 
-
 # Baseline model, a modified ResNet with reduced downsampling for a spatially larger feature tensor in the last layer
 class IndividualLandmarkNet(torch.nn.Module):
     def __init__(self, init_model: ResNet, num_landmarks: int = 8,
-                 num_classes: int = 2000) -> None:
+                 num_classes: int = 2000, landmark_dropout_rate: int = 0.5) -> None:
         super().__init__()
 
         self.num_landmarks = num_landmarks
@@ -31,7 +30,7 @@ class IndividualLandmarkNet(torch.nn.Module):
         self.modulation = torch.nn.Parameter(torch.ones((1,1024 + 2048,num_landmarks + 1)))
 
         self.dropout = torch.nn.Dropout(0.5)
-        self.dropout_full_landmarks = torch.nn.Dropout1d(0.3)
+        self.dropout_full_landmarks = torch.nn.Dropout1d(landmark_dropout_rate)
 
     def forward(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         # Pretrained ResNet part of the model

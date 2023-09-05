@@ -222,3 +222,6 @@ class CelebA(data.Dataset):
 
     def __len__(self):
         return len(self.images)
+
+if __name__ == "__main__":
+    dataset = CelebA()

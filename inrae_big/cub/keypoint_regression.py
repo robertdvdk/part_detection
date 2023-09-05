@@ -1,5 +1,5 @@
 """
-From: https://github.com/zxhuang1698/interpretability-by-parts/blob/master/src/cub200/eval_interp.py
+Large parts from: https://github.com/zxhuang1698/interpretability-by-parts/blob/master/src/cub200/eval_interp.py
 """
 
 
@@ -14,133 +14,10 @@ from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
 from lib import *
 import torch.nn.functional as F
 
-import cv2
-from PIL import Image
-
-# number of attributes and landmark annotations
+# number of attributes and ground truth landmarks
 torch.multiprocessing.set_sharing_strategy('file_system')
 num_classes = 200
 num_landmarks = 15
-
-def show_att_on_image(img, mask, output):
-    """
-    Convert the grayscale attention into heatmap on the image, and save the visualization.
-
-    Parameters
-    ----------
-    img: np.array, [H, W, 3]
-        Original colored image.
-    mask: np.array, [H, W]
-        Attention map normalized by subtracting min and dividing by max.
-    output: str
-        Destination image (path) to save.
-
-    Returns
-    ----------
-    Save the result to output.
-
-    """
-    # generate heatmap and normalize into [0, 1]
-    heatmap = cv2.applyColorMap(np.uint8(255*mask), cv2.COLORMAP_JET)
-    heatmap = np.float32(heatmap) / 255
-
-    # add heatmap onto the image
-    merged = heatmap + np.float32(img)
-
-    # re-scale the image
-    merged = merged / np.max(merged)
-    cv2.imwrite(output, np.uint8(255 * merged))
-
-def landmarks_to_rgb(maps):
-    colors = [[0.25, 0, 0.25], [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75],
-              [0.5, 0.5, 0], [0, 0.5, 0.5], [0.5, 0, 0.5], [0.75, 0.25, 0],
-              [0.75, 0, 0.25], [0, 0.75, 0.25], [0.25, 0.75, 0],
-              [0.25, 0, 0.75],
-              [0, 0.25, 0.75], [0.75, 0.5, 0], [0.75, 0, 0.5], [0, 0.75, 0.5],
-              [0.5, 0.75, 0], [0.5, 0, 0.75], [0, 0.5, 0.75],
-              [0.75, 0.5, 0.25],
-              [0.25, 0.75, 0.5], [0.5, 0.25, 0.75], [0.5, 0.75, 0.25],
-              [0.75, 0.25, 0.5], [0.25, 0.5, 0.75]]
-    rgb = np.ones((maps.shape[0],maps.shape[1],3))
-    for c in range(3):
-        for h in range(len(maps)):
-            for w in range(len(maps[0])):
-                rgb[h, w, c] += colors[maps[h, w]][c] * 2
-    return rgb
-
-def plot_assignment(root, assign_hard, num_parts):
-    """
-    Blend the original image and the colored assignment maps.
-
-    Parameters
-    ----------
-    root: str
-        Root path for saving visualization results.
-    assign_hard: np.array, [H, W]
-        Hard assignment map (int) denoting the deterministic assignment of each pixel. Generated via argmax.
-    num_parts: int, number of object parts.
-
-    Returns
-    ----------
-    Save the result to root/assignment.png.
-
-    """
-    maps = np.eye(num_parts, dtype='uint8')[assign_hard]
-    maps = np.expand_dims(np.transpose(maps, (2, 0, 1)), axis=0)
-    grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
-                                    torch.arange(maps.shape[3]))
-    grid_x = grid_x.unsqueeze(0).unsqueeze(0)
-    grid_y = grid_y.unsqueeze(0).unsqueeze(0)
-
-    map_sums = maps.sum(3).sum(2)
-    maps_x = grid_x * maps
-    maps_y = grid_y * maps
-    loc_x = maps_x.sum(3).sum(2) / map_sums
-    loc_y = maps_y.sum(3).sum(2) / map_sums
-    colors = [[0.25, 0, 0.25], [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75],
-          [0.5, 0.5, 0], [0, 0.5, 0.5], [0.5, 0, 0.5], [0.75, 0.25, 0],
-          [0.75, 0, 0.25], [0, 0.75, 0.25], [0.25, 0.75, 0], [0.25, 0, 0.75],
-          [0, 0.25, 0.75], [0.75, 0.5, 0], [0.75, 0, 0.5], [0, 0.75, 0.5],
-          [0.5, 0.75, 0], [0.5, 0, 0.75], [0, 0.5, 0.75], [0.75, 0.5, 0.25],
-          [0.25, 0.75, 0.5], [0.5, 0.25, 0.75], [0.5, 0.75, 0.25],
-          [0.75, 0.25, 0.5], [0.25, 0.5, 0.75]]
-
-    fig, ax = plt.subplots(1, 1)
-    i = 0
-    landmarks = landmarks_to_rgb(assign_hard[:, :])
-    # TODO look at im
-    ax.imshow((skimage.transform.resize(landmarks, (256, 256)) * 0.4 + skimage.transform.resize((im[:, :, :].permute(1, 2, 0).numpy()), (256, 256))) * 0.6)
-    x_coords = loc_y[i, :].detach().cpu()*256/maps.shape[-1]
-    y_coords = loc_x[i, :].detach().cpu() * 256 / maps.shape[-1]
-    cols = colors[0:loc_x.shape[1]]
-    n = np.arange(loc_x.shape[1] + 1)
-    for xi, yi, col_i, mark in zip(x_coords, y_coords, cols, n):
-        if np.where(assign_hard == mark, 1, 0).sum() == 0:
-            continue
-        ax.scatter(xi, yi, color=col_i, marker=f'${mark}$')
-    plt.savefig(os.path.join(root, 'assignment.png'))
-    # plt.show()
-
-
-
-    # # generate the numpy array for colors
-    # colors = generate_colors(num_parts)
-    #
-    # # coefficient for blending
-    # coeff = 0.4
-    #
-    # # load the input as RGB image, convert into numpy array
-    # input = Image.open(os.path.join(root, 'input.png')).convert('RGB')
-    # input_np = np.array(input).astype(float)
-    # # blending by each pixel
-    # for i in range(assign_hard.shape[0]):
-    #     for j in range(assign_hard.shape[1]):
-    #         assign_ij = assign_hard[i][j]
-    #         input_np[i, j] = (1 - coeff) * input_np[i, j] + coeff * colors[assign_ij]
-    # # save the resulting image
-    # im = Image.fromarray(np.uint8(input_np))
-    # im.save(os.path.join(root, 'assignment.png'))
-
 
 def create_centers(data_loader, model, num_parts):
     """
@@ -207,20 +84,6 @@ def create_centers(data_loader, model, num_parts):
             # extract the landmark and existence mask, [N, num_landmarks, 2]
             landmarks = landmarks_full[:, :, -3:-1]
             masks = landmarks_full[:, :, -1].unsqueeze(2).expand_as(landmarks)
-
-            # To plot some images for visual debugging
-            # if i % 10:
-            #     plt.imshow(input_raw[0].permute(1, 2, 0).cpu().numpy())
-            #     plt.scatter(landmarks[:, :, 0].cpu().numpy(), landmarks[:, :, 1].cpu().numpy())
-            #     # plt.scatter(y_centroid, x_centroid, c='r', marker='x')
-            #     plt.show()
-            #     print(assignment.shape)
-            #     # assignment = assignment[:, :-1, :, :]
-            #     assignment[:, [0, 8], :, :] = assignment[:, [8, 0], :, :]
-            #
-            #     # generate the one-channel hard assignment via argmax
-            #     assign = torch.argmax(assignment, dim=1)
-            #     plot_assignment(input_raw[0].permute(1, 2, 0).cpu().numpy(), assign.cpu().squeeze(0).numpy(), 9)
 
             # normalize the coordinates with the bounding boxes
             bbox = bbox.unsqueeze(2)
@@ -311,7 +174,6 @@ def eval_nmi_ari(net, data_loader):
         inputs, landmarks_full, bbox = input_raw, landmarks_raw, bbox_raw
 
         with torch.no_grad():
-
             # generate assignment map
             _, maps, logits_parts, _, logits = net(inputs)
             part_name_mat_w_bg = F.interpolate(maps, size=inputs.shape[-2:], mode='bilinear', align_corners=False)
@@ -444,8 +306,7 @@ def eval_kpr(net, fit_loader, eval_loader, nparts):
     print('Evaluation finished for model.')
     return error
 
-def main(mode):
-    # define data transformation (no crop)
+def main():
     nparts = 8
     num_cls = 200
     height = 448
@@ -464,29 +325,26 @@ def main(mode):
     # load the net in eval mode
     basenet = resnet101()
     net = IndividualLandmarkNet(basenet, nparts, num_classes=num_cls).cuda()
-    checkpoint = torch.load("../archive/8parts_all_losses_normal_ABLATION_INDIVIDUAL.pt")
-    net.load_state_dict(checkpoint, strict=True)
+    checkpoint = torch.load("../archive/16parts_all_losses_normal_ABLATION_INDIVIDUAL.pt")
+    net.load_state_dict(checkpoint, strict=False)
     net.eval()
 
-    if mode == 'keypoint':
-        fit_data = CUB200(cub_path,
-                          train=True, transform=data_transforms, resize=height)
-        fit_loader = torch.utils.data.DataLoader(
-            fit_data, batch_size=1, shuffle=True,
-            num_workers=1, pin_memory=False, drop_last=False)
-        kpr = eval_kpr(net, fit_loader, eval_loader, nparts)
-        print('Mean keypoint regression error on the test set is %.2f%%.' % kpr)
+    # Calculate keypoint regression error
+    fit_data = CUB200(cub_path,
+                      train=True, transform=data_transforms, resize=height)
+    fit_loader = torch.utils.data.DataLoader(
+        fit_data, batch_size=1, shuffle=True,
+        num_workers=1, pin_memory=False, drop_last=False)
+    kpr = eval_kpr(net, fit_loader, eval_loader, nparts)
+    print('Mean keypoint regression error on the test set is %.2f%%.' % kpr)
 
-    elif mode == 'nmi_ari':
-        nmi, ari = eval_nmi_ari(net, eval_loader)
-        print(nmi)
-        print(ari)
-        print('NMI between predicted and ground truth parts is %.2f' % nmi)
-        print('ARI between predicted and ground truth parts is %.2f' % ari)
-        print('Evaluation finished.')
-
-    else:
-        print("Please run with either keypoint or nmi_ari")
+    # Calculate NMI and ARI
+    nmi, ari = eval_nmi_ari(net, eval_loader)
+    print(nmi)
+    print(ari)
+    print('NMI between predicted and ground truth parts is %.2f' % nmi)
+    print('ARI between predicted and ground truth parts is %.2f' % ari)
+    print('Evaluation finished.')
 
 if __name__ == '__main__':
-    main('keypoint')
+    main()

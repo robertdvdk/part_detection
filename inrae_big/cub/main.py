@@ -20,7 +20,6 @@ import argparse
 torch.multiprocessing.set_sharing_strategy('file_system')
 torch.cuda.empty_cache()
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def train(net, optimizer, train_loader, device, model_name, epoch,
           epoch_leftoff, loss_fn, loss_hyperparams, all_losses=None):
@@ -54,7 +53,7 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
     net: torch.nn.Module
         The model, trained for another epoch
     all_losses: [float]
-        The list of all running losses, used to display (not backprop)
+        The list of all running losses, used to display
     """
     # Training
     if all_losses:
@@ -82,7 +81,6 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
 
         # Forward pass of transformed images
         angle = np.random.rand()*180-90
-        # todo change translate
         translate = list(np.int32(np.floor(np.random.rand(2)*100-50)))
         scale = np.random.rand()*0.6+0.8
         transf_img = rigid_transform(sample[0], angle, translate, scale,
@@ -91,7 +89,6 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
 
         # Classification loss for landmarks by themselves, and for
         # the attention layer
-        # TODO remove loss_class_landmarks
         loss_class_landmarks = loss_fn(scores[:, :, 0:-1].mean(-1), lab).mean()
         loss_class_landmarks = loss_class_landmarks * l_class_lnd
         loss_class_attention = loss_fn(classif, lab).mean()
@@ -121,7 +118,6 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
         loss_max = (1 - loss_max) * l_max
 
         # Orthogonality loss
-        # TODO change naming of anchor
         normed_feature = torch.nn.functional.normalize(anchor, dim=1)
         similarity = torch.matmul(normed_feature.permute(0, 2, 1),
                                   normed_feature)
@@ -191,7 +187,7 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
     return net, all_losses
 
 
-def validation(device, net, val_loader, epoch, only_test, model_name):
+def validation(device, net, val_loader, epoch, only_test, model_name, save_maps=False):
     """
     Calculates validation accuracy for trained model, saves it to file
     Parameters
@@ -208,6 +204,8 @@ def validation(device, net, val_loader, epoch, only_test, model_name):
         Whether this is a run where the model is only being evaluated
     model_name: str
         Name of the model, used to save results
+    save_maps: bool
+        Whether to save the attention maps
     """
     net.eval()
     net.to(device)
@@ -232,26 +230,21 @@ def validation(device, net, val_loader, epoch, only_test, model_name):
             top_class_lnd.append(1 if preds_lnd == lab[j].cpu() else 0)
             top_class_att.append(1 if preds_att == lab[j].cpu() else 0)
 
-        # Get landmark coordinates
-        grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]), torch.arange(maps.shape[3]))
-        grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
-        grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
-
-        map_sums = maps.sum(3).sum(2).detach()
-        maps_x = grid_x * maps
-        maps_y = grid_y * maps
-        loc_x = maps_x.sum(3).sum(2) / map_sums
-        loc_y = maps_y.sum(3).sum(2) / map_sums
-
         map_max = maps.max(-1)[0].max(-1)[0][:, :-1].detach()
         all_maxes = torch.cat((all_maxes, map_max), 0)
 
-        if np.random.random() < 0.01:
-            if only_test:
-                savefig = False
-            else:
-                savefig = True
-            show_maps(sample[0], maps, loc_x, loc_y, epoch, model_name, savefig)
+        # Saving the attention maps
+        if save_maps:
+            grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]), torch.arange(maps.shape[3]))
+            grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
+            grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
+            map_sums = maps.sum(3).sum(2).detach()
+            maps_x = grid_x * maps
+            maps_y = grid_y * maps
+            loc_x = maps_x.sum(3).sum(2) / map_sums
+            loc_y = maps_y.sum(3).sum(2) / map_sums
+            if np.random.random() < 0.01:
+                show_maps(sample[0], maps, loc_x, loc_y, epoch, model_name, save_maps)
 
     top1acc = str(np.mean(np.array(top_class_att)))
     top1acclnd = str(np.mean(np.array(top_class_lnd)))
@@ -264,32 +257,35 @@ def validation(device, net, val_loader, epoch, only_test, model_name):
     pbar.close()
 
 def main():
-    # TODO add running instructions in readme
     parser = argparse.ArgumentParser(
-        description='PDiscoNet trainer on CUB'
+        description='PDiscoNet on CUB'
     )
     parser.add_argument('--model_name', help='used to train a new model',
                         required=True)
     parser.add_argument('--data_path',
-                        help='directory that contains celeba files, must'
-                             'contain folder "./unaligned"', required=True)
+                        help='directory that contains cub files, must'
+                             'contain folder "./images"', required=True)
     parser.add_argument('--num_parts', help='number of parts to predict',
-                        default=8)
-    parser.add_argument('--lr', default=1e-4)
+                        default=8, type=int)
+    parser.add_argument('--lr', default=1e-4, type=float)
+    parser.add_argument('--batch_size', default=15, type=int)
+    parser.add_argument('--image_size', default=448, type=int)
+    parser.add_argument('--epochs', default=28, type=int)
     parser.add_argument('--pretrained_model_name', default='',
                         help='used to load pretrained model')
-    parser.add_argument('--batch_size', default=15)
-    parser.add_argument('--image_size', default=448)
-    parser.add_argument('--epochs', default=28)
+    parser.add_argument('--save_maps', default=True, type=bool)
     parser.add_argument('--warm_start', default=False,
-                        help='Whether to use a pretrained PDiscoNet')
+                        help='Whether to use a pretrained PDiscoNet', type=bool)
     parser.add_argument('--only_test', default=False,
-                        help='Whether to only eval the model')
+                        help='Whether to only eval the model', type=bool)
     args = parser.parse_args()
 
     if not os.path.exists(f'../results_{args.model_name}'):
         os.mkdir(f'../results_{args.model_name}')
-    print(torch.cuda.is_available())
+    if torch.cuda.is_available():
+        print("Using GPU to train.")
+    else:
+        print("Using CPU to train.")
 
     np.random.seed(1)
     train_transforms = transforms.Compose([
@@ -298,14 +294,14 @@ def main():
         transforms.ColorJitter(0.1),
         transforms.RandomAffine(degrees=90,translate=(0.2,0.2),scale=(0.8,1.2)),
         transforms.RandomCrop(args.image_size),
-        transforms.ToTensor(),
+        transforms.ToTensor()
     ])
     test_transforms = transforms.Compose([
         transforms.Resize(size=args.image_size),
         transforms.CenterCrop(size=args.image_size),
-        transforms.ToTensor(),
+        transforms.ToTensor()
     ])
-    dataset_train = CUBDataset(args.data_path, split=1, mode='train',
+    dataset_train = CUBDataset(args.data_path, split=0.9, mode='train',
                                height=args.image_size, transform=train_transforms)
     dataset_test = CUBDataset(args.data_path, mode='test',
                               transform=test_transforms)
@@ -323,7 +319,7 @@ def main():
     basenet = resnet101(weights=weights)
     num_cls = 200
 
-    net = IndividualLandmarkNet(basenet, int(args.num_parts), num_classes=num_cls)
+    net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls)
 
     if args.warm_start:
         net.load_state_dict(torch.load(args.pretrained_model_name),
@@ -331,6 +327,8 @@ def main():
         epoch_leftoff = get_epoch(args.model_name) + 1
     else:
         epoch_leftoff = 0
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net.to(device)
 
     if args.only_test:

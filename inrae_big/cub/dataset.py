@@ -87,7 +87,6 @@ def pil_loader(path):
 
 class CUB200(torch.utils.data.Dataset):
     """
-    From: https://github.com/zxhuang1698/interpretability-by-parts/
     CUB200 dataset.
     Variables
     ----------

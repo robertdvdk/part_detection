@@ -65,8 +65,8 @@ class IndividualLandmarkNet(torch.nn.Module):
         all_features = ((maps).unsqueeze(1) * feature_tensor.unsqueeze(2)).mean(-1).mean(-1)
 
         # Classification based on the landmarks
-        all_features_modulated = all_features * self.modulation
-        all_features_modulated = self.dropout_full_landmarks(all_features_modulated.permute(0,2,1)).permute(0,2,1)
+        # all_features_modulated = all_features * self.modulation
+        all_features_modulated = self.dropout_full_landmarks(all_features.permute(0,2,1)).permute(0,2,1)
         y = self.fc_class_landmarks(all_features_modulated.permute(0, 2, 1)).permute(0, 2, 1)
         classification = y[:, :, :-1].mean(-1)
 

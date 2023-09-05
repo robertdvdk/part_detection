@@ -1,5 +1,5 @@
 """
-From: https://github.com/zxhuang1698/interpretability-by-parts/blob/master/src/cub200/eval_interp.py
+In large part from: https://github.com/subhc/unsup-parts/
 """
 
 # pytorch & misc
@@ -70,14 +70,14 @@ def eval_nmi_ari(net, data_loader):
 
 def main():
     # define data transformation (no crop)
-    nparts = 50
+    nparts = 8
     num_cls = 110
     height = 256
     data_transforms = transforms.Compose([
         transforms.Resize(size=height),
         transforms.ToTensor(),
     ])
-    pim_path = "../datasets/pim"
+    pim_path = "../datasets/partimagenet"
     # define dataset and loader
     eval_data = PartImageNetDataset(pim_path,
                         mode='test', transform=data_transforms, get_masks=True)
@@ -88,7 +88,8 @@ def main():
     # load the net in eval mode
     basenet = resnet101()
     net = IndividualLandmarkNet(basenet, nparts, num_classes=num_cls).cuda()
-    checkpoint = torch.load("../archive/PIM_50parts_all_losses_normal_ABLATION_INDIVIDUAL.pt")
+    checkpoint = torch.load("./SANITY_CHECK_ALL_NORMAL_ABLATION_PARTIMAGENET_8PARTS.pt")
+
     net.load_state_dict(checkpoint, strict=True)
     net.eval()
 

@@ -25,7 +25,7 @@
       <paths name="robert@inrae_big:22">
         <serverdata>
           <mappings>
-            <mapping deploy="/project" local="$PROJECT_DIR$/inrae_big" />
+            <mapping deploy="/DATA/project/our_method" local="$PROJECT_DIR$/inrae_big" />
           </mappings>
         </serverdata>
       </paths>

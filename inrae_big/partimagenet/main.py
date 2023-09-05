@@ -177,7 +177,7 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
             f"Lnd training top 1: {str(np.mean(np.array(top_class_lnd)))}\n")
     return net, all_losses
 
-def validation(device, net, val_loader, epoch, only_test, model_name):
+def validation(device, net, val_loader, epoch, only_test, model_name, save_maps):
     """
     Calculates validation accuracy for trained model, saves it to file
     Parameters
@@ -194,6 +194,8 @@ def validation(device, net, val_loader, epoch, only_test, model_name):
         Whether this is a run where the model is only being evaluated
     model_name: str
         Name of the model, used to save results
+    save_maps: bool
+        Whether to save the attention maps
     """
     net.eval()
     net.to(device)
@@ -218,26 +220,20 @@ def validation(device, net, val_loader, epoch, only_test, model_name):
             top_class_lnd.append(1 if preds_lnd == lab[j].cpu() else 0)
             top_class_att.append(1 if preds_att == lab[j].cpu() else 0)
 
-        # Get landmark coordinates
-        grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]), torch.arange(maps.shape[3]))
-        grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
-        grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
-
-        map_sums = maps.sum(3).sum(2).detach()
-        maps_x = grid_x * maps
-        maps_y = grid_y * maps
-        loc_x = maps_x.sum(3).sum(2) / map_sums
-        loc_y = maps_y.sum(3).sum(2) / map_sums
-
         map_max = maps.max(-1)[0].max(-1)[0][:, :-1].detach()
         all_maxes = torch.cat((all_maxes, map_max), 0)
 
-        if np.random.random() < 0.05:
-            if only_test:
-                savefig = False
-            else:
-                savefig = True
-            show_maps(sample[0], maps, loc_x, loc_y, epoch, model_name, savefig)
+        # Saving the attention maps
+        if save_maps:
+            grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]), torch.arange(maps.shape[3]))
+            grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
+            grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
+            map_sums = maps.sum(3).sum(2).detach()
+            maps_x = grid_x * maps
+            maps_y = grid_y * maps
+            loc_x = maps_x.sum(3).sum(2) / map_sums
+            loc_y = maps_y.sum(3).sum(2) / map_sums
+            show_maps(sample[0], maps, loc_x, loc_y, epoch, model_name, save_maps)
 
     top1acc = str(np.mean(np.array(top_class_att)))
     top1acclnd = str(np.mean(np.array(top_class_lnd)))
@@ -251,25 +247,26 @@ def validation(device, net, val_loader, epoch, only_test, model_name):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='PDiscoNet trainer on CUB'
+        description='PDiscoNet on PartImageNet'
     )
     parser.add_argument('--model_name', help='used to train a new model',
                         required=True)
     parser.add_argument('--data_path',
-                        help='directory that contains celeba files, must'
+                        help='directory that contains partimagenet files, must'
                              'contain folder "./unaligned"', required=True)
     parser.add_argument('--num_parts', help='number of parts to predict',
-                        default=25)
-    parser.add_argument('--lr', default=1e-4)
+                        default=25, type=int)
+    parser.add_argument('--lr', default=1e-4, type=float)
+    parser.add_argument('--batch_size', default=20, type=int)
+    parser.add_argument('--image_size', default=256, type=int)
+    parser.add_argument('--epochs', default=20, type=int)
     parser.add_argument('--pretrained_model_name', default='',
                         help='used to load pretrained model')
-    parser.add_argument('--batch_size', default=20)
-    parser.add_argument('--image_size', default=256)
-    parser.add_argument('--epochs', default=20)
+    parser.add_argument('--save_maps', default=True, type=bool)
     parser.add_argument('--warm_start', default=False,
-                        help='Whether to use a pretrained PDiscoNet')
+                        help='Whether to use a pretrained PDiscoNet', type=bool)
     parser.add_argument('--only_test', default=False,
-                        help='Whether to only eval the model')
+                        help='Whether to only eval the model', type=bool)
     args = parser.parse_args()
 
     if not os.path.exists(f'../results_{args.model_name}'):
@@ -359,7 +356,7 @@ def main():
                                         loss_fn, loss_hyperparams)
             scheduler.step()
             print(f'Validation accuracy in epoch {epoch}:')
-            validation(device, net, val_loader, epoch, args.only_test, args.model_name)
+            validation(device, net, val_loader, epoch, args.only_test, args.model_name, )
             torch.cuda.empty_cache()
         # Validation
         else:
