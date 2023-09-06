@@ -45,7 +45,7 @@ class CelebA(data.Dataset):
         align_name = '_aligned' if align else '_unaligned'
         percentage_name = '_0' if percentage is None else '_'+str(int(percentage*100))
         save_name = os.path.join(root, split+align_name+percentage_name+'.pickle')
-        self.shuffle = np.arange(182637)
+        self.shuffle = np.arange(202599)
         np.random.shuffle(self.shuffle)
         if os.path.exists(save_name) is False:
             print('Preparing the data...')
@@ -222,6 +222,3 @@ class CelebA(data.Dataset):
 
     def __len__(self):
         return len(self.images)
-
-if __name__ == "__main__":
-    dataset = CelebA()

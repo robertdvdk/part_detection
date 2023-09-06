@@ -12,6 +12,7 @@ from nets import *
 from torchvision.models import resnet101
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
 from lib import *
+import torch.nn.functional as F
 
 # Naming used: 'landmarks' are ground truth parts, 'parts' are predicted parts
 num_landmarks = 5
@@ -257,7 +258,7 @@ def eval_kpr(net, fit_loader, eval_loader, nparts):
 
 def main(mode):
     # define data transformation (no crop)
-    nparts = 16
+    nparts = 8
     num_cls = 10177
     height = 256
     data_transforms = transforms.Compose([
@@ -276,7 +277,7 @@ def main(mode):
     # load the net in eval mode
     basenet = resnet101()
     net = IndividualLandmarkNet(basenet, nparts, num_classes=num_cls).cuda()
-    checkpoint = torch.load("../archive/celeba_16parts_identities_FINAL.pt")
+    checkpoint = torch.load("./celeb_8parts.pt")
     net.load_state_dict(checkpoint, strict=True)
     net.eval()
 
@@ -301,4 +302,4 @@ def main(mode):
 
 if __name__ == '__main__':
     # Run as either 'keypoint' or 'nmi_ari'
-    main('keypoint')
+    main('nmi_ari')

@@ -89,9 +89,10 @@ def landmarks_to_rgb(maps):
     rgb: Tensor, [width_map, height_map, 3]
         The color maps
     """
-    colors = [[[0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],
-               [0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],
-               [0, 0.75, 0.25]] for _ in range(3)]
+
+    colors = [[0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25], [0, 0.75, 0.25],
+    [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25], [0, 0.75, 0.25],
+    [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25], [0, 0.75, 0.25]]
     rgb = np.zeros((maps.shape[1], maps.shape[2], 3))
 
     for m in range(maps.shape[0]):
@@ -100,7 +101,7 @@ def landmarks_to_rgb(maps):
 
     return rgb
 
-def show_maps(ims,maps,loc_x,loc_y, epoch, experiment, savefig=False):
+def show_maps(ims,maps,loc_x,loc_y, epoch, experiment):
     """
     Plot images, attention maps and landmark centroids.
     Parameters
@@ -116,9 +117,9 @@ def show_maps(ims,maps,loc_x,loc_y, epoch, experiment, savefig=False):
     savefig: bool
         If true, save the figures to file, otherwise simply show the plots
     """
-    colors = [[[0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0],
-               [0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25],
-               [0, 0.75, 0.25]] for _ in range(3)]
+    colors = [[0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25], [0, 0.75, 0.25],
+    [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25], [0, 0.75, 0.25],
+    [0.75, 0, 0], [0, 0.75, 0], [0, 0, 0.75], [0.5, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0.5], [0.75, 0.25, 0], [0.75, 0, 0.25], [0, 0.75, 0.25]]
     fig, axs = plt.subplots(3, 3)
     i = 0
     for ax in axs.reshape(-1):
@@ -131,10 +132,7 @@ def show_maps(ims,maps,loc_x,loc_y, epoch, experiment, savefig=False):
                        c=colors[:loc_x.shape[1]-1], marker='x')
         i += 1
 
-    if savefig==False:
-        plt.show()
-    else:
-        plt.savefig(f'../results_{experiment}/{epoch}_{np.random.randint(0, 10)}')
+    plt.savefig(f'../results_{experiment}/{epoch}_{np.random.randint(0, 10)}')
 
 def get_epoch(experiment):
     """

@@ -98,7 +98,7 @@ def rigid_transform(img, angle, translate, scale, invert=False):
         img = visionF.affine(img, -angle, [0,0], 1/scale, shear)
     return img
 
-def show_maps(ims,maps,loc_x,loc_y, epoch, experiment, savefig=False):
+def show_maps(ims,maps,loc_x,loc_y, epoch, experiment):
     """
     Plot images, attention maps and landmark centroids.
     Parameters
@@ -123,13 +123,12 @@ def show_maps(ims,maps,loc_x,loc_y, epoch, experiment, savefig=False):
         if i<maps.shape[0]:
             landmarks = landmarks_to_rgb( maps[i,0:-1,:,:].detach().cpu().numpy())
             ax.imshow((skimage.transform.resize(landmarks, (256, 256)) + skimage.transform.resize((ims[i, :, :, :].permute(1, 2, 0).numpy()), (256, 256))))
-            ax.scatter(loc_y[i,0:-1].detach().cpu()*256/maps.shape[-1],loc_x[i,0:-1].detach().cpu()*256/maps.shape[-1],c=colors[0:loc_x.shape[1]-1],marker='x')
+            ax.scatter(loc_y[i,0:-1].detach().cpu()*256/maps.shape[-1],
+                       loc_x[i,0:-1].detach().cpu()*256/maps.shape[-1],
+                       c=colors[0:loc_x.shape[1]-1], marker='x')
         i += 1
 
-    if savefig==False:
-        plt.show()
-    else:
-        plt.savefig(f'../results_{experiment}/{epoch}_{np.random.randint(0, 10)}')
+    plt.savefig(f'../results_{experiment}/{epoch}_{np.random.randint(0, 10)}')
 
 def get_epoch(experiment):
     """

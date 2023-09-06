@@ -187,7 +187,7 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
     return net, all_losses
 
 
-def validation(device, net, val_loader, epoch, only_test, model_name, save_maps=False):
+def validation(device, net, val_loader, epoch, only_test, model_name, save_maps=True):
     """
     Calculates validation accuracy for trained model, saves it to file
     Parameters
@@ -244,7 +244,7 @@ def validation(device, net, val_loader, epoch, only_test, model_name, save_maps=
             loc_x = maps_x.sum(3).sum(2) / map_sums
             loc_y = maps_y.sum(3).sum(2) / map_sums
             if np.random.random() < 0.01:
-                show_maps(sample[0], maps, loc_x, loc_y, epoch, model_name, save_maps)
+                show_maps(sample[0], maps, loc_x, loc_y, epoch, model_name)
 
     top1acc = str(np.mean(np.array(top_class_att)))
     top1acclnd = str(np.mean(np.array(top_class_lnd)))
@@ -322,7 +322,7 @@ def main():
     net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls)
 
     if args.warm_start:
-        net.load_state_dict(torch.load(args.pretrained_model_name),
+        net.load_state_dict(torch.load(args.pretrained_model_name) + '.pt',
                             strict=False)
         epoch_leftoff = get_epoch(args.model_name) + 1
     else:
@@ -375,13 +375,13 @@ def main():
             scheduler.step()
             print(f'Validation accuracy in epoch {epoch}:')
             validation(device, net, val_loader, epoch, args.only_test,
-                       args.model_name)
+                       args.model_name, save_maps=args.save_maps)
             torch.cuda.empty_cache()
         # Validation
         else:
             print('Validation accuracy with saved network:')
             validation(device, net, val_loader, epoch, args.only_test,
-                       args.model_name)
+                       args.model_name, save_maps=args.save_maps)
 
 
 if __name__ == "__main__":

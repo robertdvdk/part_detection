@@ -307,7 +307,8 @@ def main():
     net = IndividualLandmarkNet(basenet, int(args.num_parts), num_classes=num_cls)
 
     if args.warm_start:
-        net.load_state_dict(torch.load(args.pretrained_model_name), strict=False)
+        net.load_state_dict(torch.load(args.pretrained_model_name) + '.pt',
+                            strict=False)
         epoch_leftoff = get_epoch(args.model_name) + 1
     else:
         epoch_leftoff = 0

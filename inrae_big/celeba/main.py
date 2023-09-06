@@ -190,7 +190,7 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
     return net, all_losses
 
 
-def validation(device, net, val_loader, epoch, only_test, model_name):
+def validation(device, net, val_loader, epoch, only_test, model_name, save_maps=True):
     """
     Calculates validation accuracy for trained model, saves it to file
     Parameters
@@ -207,6 +207,8 @@ def validation(device, net, val_loader, epoch, only_test, model_name):
         Whether this is a run where the model is only being evaluated
     model_name: str
         Name of the model, used to save results
+    save_maps: bool
+        Whether to save the attention maps
     """
     net.eval()
     net.to(device)
@@ -232,28 +234,22 @@ def validation(device, net, val_loader, epoch, only_test, model_name):
             top_class_lnd.append(1 if preds_lnd == lab[j].cpu() else 0)
             top_class_att.append(1 if preds_att == lab[j].cpu() else 0)
 
-        # Get landmark coordinates
-        grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
-                                        torch.arange(maps.shape[3]))
-        grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
-        grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
-
-        map_sums = maps.sum(3).sum(2).detach()
-        maps_x = grid_x * maps
-        maps_y = grid_y * maps
-        loc_x = maps_x.sum(3).sum(2) / map_sums
-        loc_y = maps_y.sum(3).sum(2) / map_sums
-
+        # Saving the attention maps
         map_max = maps.max(-1)[0].max(-1)[0][:, :-1].detach()
         all_maxes = torch.cat((all_maxes, map_max), 0)
+        if save_maps:
+            grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
+                                            torch.arange(maps.shape[3]))
+            grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
+            grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
+            map_sums = maps.sum(3).sum(2).detach()
+            maps_x = grid_x * maps
+            maps_y = grid_y * maps
+            loc_x = maps_x.sum(3).sum(2) / map_sums
+            loc_y = maps_y.sum(3).sum(2) / map_sums
+            if np.random.random() < 0.01:
+                show_maps(sample[0], maps, loc_x, loc_y, epoch, model_name)
 
-        if np.random.random() < 0.01:
-            if only_test:
-                savefig = False
-            else:
-                savefig = True
-            show_maps(sample[0], maps, loc_x, loc_y, epoch, model_name,
-                      savefig)
 
     top1acc = str(np.mean(np.array(top_class_att)))
     top1acclnd = str(np.mean(np.array(top_class_lnd)))
@@ -333,7 +329,8 @@ def main():
     net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls)
 
     if args.warm_start:
-        net.load_state_dict(torch.load(args.pretrained_model_name), strict=False)
+        net.load_state_dict(torch.load(args.pretrained_model_name + '.pt'),
+                            strict=False)
         epoch_leftoff = get_epoch(args.model_name) + 1
     else:
         epoch_leftoff = 0
@@ -384,12 +381,12 @@ def main():
             scheduler.step()
             print(f'Validation accuracy in epoch {epoch}:')
             validation(device, net, val_loader, epoch, args.only_test,
-                       args.model_name)
+                       args.model_name, save_maps=args.save_maps)
             torch.cuda.empty_cache()
         else:
             print('Validation accuracy with saved network:')
             validation(device, net, val_loader, epoch, args.only_test,
-                       args.model_name)
+                       args.model_name, save_maps=args.save_maps)
 
 
 if __name__ == "__main__":
