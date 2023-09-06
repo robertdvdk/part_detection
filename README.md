@@ -6,6 +6,7 @@ First, download the datasets here:
 3. PartImageNet: https://github.com/TACJu/PartImageNet. Download the PartImageNet_OOD version.
 
 For the default folder structure, clone the git repo and extract the datasets into their respective folders in ```/datasets/```s (extract the CelebA dataset in a new folder ```/celeba/unaligned/```). So, the default folder structure is:
+
 ```
 ├── celeba
 ├── cub
@@ -20,6 +21,7 @@ For the default folder structure, clone the git repo and extract the datasets in
 │       └── val
 └── partimagenet
 ```
+
 Next, build the conda environment using the environment.yml file. 
 
 Finally, there are two more steps to prepare the datasets:
@@ -49,7 +51,6 @@ The argument parser has the following parameters:
 
 ```--warm_start``` is used in conjunction with ```---pretrained_model_name```: when you use ```--warm_start True```, you should also specify a model name in ```--pretrained_model_name```.
 
-
 ```--only_test``` is used when you do not want to train the model, and instead you only wish to evaluate using a set of parameters. When you use this option, you should also use ```--warm_start``` and ```--pretrained_model_name```.
 
 See below for some examples for each dataset.
@@ -64,7 +65,7 @@ python main.py --model_name celeb_8parts --data_path ../datasets/celeba --num_pa
 <h5>Testing</h5>
 
 ```
-python main.py --model_name celeb_8parts --data_path ../datasets/celeba --num_parts 8 --lr 1e-4 --batch_size 20 --image_size 256 --epochs 15
+python main.py --model_name celeb_8parts --data_path ../datasets/celeba --num_parts 8 --pretrained_model_name celeb_8parts --image_size 256 --warm_start True --only_test True
 ```
 
 <h3>CUB</h3>
@@ -82,10 +83,15 @@ python main.py --model_name CUB_8parts --data_path ../datasets/cub/CUB_200_2011 
 
 <h3>PartImageNet</h3>
 <h5>Training</h5>
+
 ```
 python main.py --model_name PARTIMAGENET_25parts --data_path ../datasets/partimagenet --num_parts 25 --lr 1e-4 --batch_size 20 --image_size 256 --epochs 20
 ```
 
 <h5>Testing</h5>
+
+```
+python main.py --model_name PARTIMAGENET_25parts --data_path ../datasets/partimagenet --num_parts 8 --pretrained_model_name PARTIMAGENET_25parts --image_size 256 --warm_start True --only_test True
+```
 
 If you find any bugs, please either send me an e-mail or open an issue on GitHub.
