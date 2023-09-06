@@ -56,17 +56,20 @@ See below for some examples for each dataset.
 
 <h3>CelebA</h3>
 <h5>Training</h5>
+
 ```
 python main.py --model_name celeb_8parts --data_path ../datasets/celeba --num_parts 8 --lr 1e-4 --batch_size 20 --image_size 256 --epochs 15
 ```
 
 <h5>Testing</h5>
+
 ```
 python main.py --model_name celeb_8parts --data_path ../datasets/celeba --num_parts 8 --lr 1e-4 --batch_size 20 --image_size 256 --epochs 15
 ```
 
 <h3>CUB</h3>
 <h5>Training</h5>
+
 ```
 python main.py --model_name CUB_8parts --data_path ../datasets/cub/CUB_200_2011 --num_parts 8 --lr 1e-4 --batch_size 15 --image_size 448 --epochs 28
 ```
