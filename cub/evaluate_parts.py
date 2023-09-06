@@ -13,6 +13,7 @@ from torchvision.models import resnet101
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
 from lib import *
 import torch.nn.functional as F
+import argparse
 
 # number of attributes and ground truth landmarks
 torch.multiprocessing.set_sharing_strategy('file_system')
@@ -119,8 +120,8 @@ def create_centers(data_loader, model, num_parts):
     masks_tensor = masks_tensor.contiguous().view(centers_tensor.shape[0], num_landmarks * 2)
     active_tensor = active_tensor.contiguous().view(active_tensor.shape[0], num_parts * 2)
 
-    return centers_tensor, annos_tensor, masks_tensor, active_tensor, \
-           gt_labels, pred_final, pred_landmarks, present_landmarks
+    return centers_tensor, annos_tensor, masks_tensor, active_tensor, gt_labels, pred_final, pred_landmarks, \
+           present_landmarks
 
 def L2_distance(prediction, annotation):
     """
@@ -223,11 +224,9 @@ def eval_kpr(net, fit_loader, eval_loader, nparts):
     """
     # convert the assignment to centers for both splits
     print('Evaluating the model for the whole data split...')
-    fit_centers, fit_annos, fit_masks, fit_active_centers, _, _, _ , _ = \
-        create_centers(fit_loader, net, nparts)
-    eval_centers, eval_annos, eval_masks, eval_active_centers, \
-    gt_labels, pred_final, pred_landmarks, present_landmarks = \
-        create_centers(eval_loader, net, nparts)
+    fit_centers, fit_annos, fit_masks, fit_active_centers, _, _, _ , _ = create_centers(fit_loader, net, nparts)
+    eval_centers, eval_annos, eval_masks, eval_active_centers, gt_labels, pred_final, pred_landmarks, \
+    present_landmarks = create_centers(eval_loader, net, nparts)
 
     # fit the linear regressor with sklearn
     # normalized assignment center coordinates -> normalized landmark coordinate annotations
@@ -307,35 +306,35 @@ def eval_kpr(net, fit_loader, eval_loader, nparts):
     return error
 
 def main():
-    nparts = 8
+    parser = argparse.ArgumentParser(description='Evaluate PDiscoNet parts on CUB')
+    parser.add_argument('--pretrained_model_name', help='Name of the trained model', required=True)
+    parser.add_argument('--data_path', help='The folder containing the CUB_200_2011 folder',
+                        default='../datasets/cub')
+    parser.add_argument('--num_parts', help='Number of parts the model was trained with', required=True, type=int)
+    parser.add_argument('--image_size', default=448, type=int)
+    args = parser.parse_args()
     num_cls = 200
-    height = 448
     data_transforms = transforms.Compose([
-        transforms.Resize(size=448),
+        transforms.Resize(size=args.image_size),
         transforms.ToTensor(),
     ])
-    cub_path = "../datasets/cub"
     # define dataset and loader
-    eval_data = CUB200(cub_path,
-                       train=False, transform=data_transforms, resize=height)
-    eval_loader = torch.utils.data.DataLoader(
-        eval_data, batch_size=1, shuffle=False,
-        num_workers=1, pin_memory=False, drop_last=False)
+    eval_data = CUB200(args.data_path, train=False, transform=data_transforms, resize=args.image_size)
+    eval_loader = torch.utils.data.DataLoader(eval_data, batch_size=1, shuffle=False, num_workers=1, pin_memory=False,
+                                              drop_last=False)
 
     # load the net in eval mode
     basenet = resnet101()
-    net = IndividualLandmarkNet(basenet, nparts, num_classes=num_cls).cuda()
-    checkpoint = torch.load("../archive/16parts_all_losses_normal_ABLATION_INDIVIDUAL.pt")
+    net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls).cuda()
+    checkpoint = torch.load(args.model_name + '.pt')
     net.load_state_dict(checkpoint, strict=False)
     net.eval()
 
     # Calculate keypoint regression error
-    fit_data = CUB200(cub_path,
-                      train=True, transform=data_transforms, resize=height)
-    fit_loader = torch.utils.data.DataLoader(
-        fit_data, batch_size=1, shuffle=True,
-        num_workers=1, pin_memory=False, drop_last=False)
-    kpr = eval_kpr(net, fit_loader, eval_loader, nparts)
+    fit_data = CUB200(args.data_path, train=True, transform=data_transforms, resize=args.image_size)
+    fit_loader = torch.utils.data.DataLoader(fit_data, batch_size=1, shuffle=True, num_workers=1, pin_memory=False,
+                                             drop_last=False)
+    kpr = eval_kpr(net, fit_loader, eval_loader, args.num_parts)
     print('Mean keypoint regression error on the test set is %.2f%%.' % kpr)
 
     # Calculate NMI and ARI

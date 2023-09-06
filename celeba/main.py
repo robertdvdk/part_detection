@@ -18,9 +18,8 @@ import argparse
 torch.multiprocessing.set_sharing_strategy('file_system')
 torch.cuda.empty_cache()
 
-
-def train(net, optimizer, train_loader, device, model_name, epoch,
-          epoch_leftoff, loss_fn, loss_hyperparams, all_losses=None):
+def train(net, optimizer, train_loader, device, model_name, epoch, epoch_leftoff, loss_fn, loss_hyperparams,
+          all_losses=None):
     """
     Model trainer, saves losses to file
     Parameters
@@ -55,12 +54,10 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
     """
     # Training
     if all_losses:
-        running_loss_conc, running_loss_max, running_loss_class_lnd, \
-        running_loss_equiv, running_loss_orth, \
+        running_loss_conc, running_loss_max, running_loss_class_lnd, running_loss_equiv, running_loss_orth, \
         running_loss_class_att = all_losses
     elif not all_losses and epoch != 0:
-        print(
-            'Please pass the losses of the previous epoch to the training function')
+        print('Please pass the losses of the previous epoch to the training function')
     net.train()
     pbar = tqdm(total=len(train_loader), position=0, leave=True)
     iter_loader = iter(train_loader)
@@ -80,8 +77,7 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
         angle = np.random.rand() * 180 - 90
         translate = list(np.int32(np.floor(np.random.rand(2) * 100 - 50)))
         scale = np.random.rand() * 0.6 + 0.8
-        transf_img = rigid_transform(sample[0], angle, translate, scale,
-                                     invert=False)
+        transf_img = rigid_transform(sample[0], angle, translate, scale, invert=False)
         _, equiv_map, _, _, _ = net(transf_img.to(device))
 
         # Classification loss for landmarks by themselves, and for
@@ -92,57 +88,41 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
         loss_class_attention = loss_class_attention * l_class_att
 
         for j in range(scores.shape[0]):
-            probs_lnd = scores[j, :, :-1].mean(-1).softmax(
-                dim=0).detach().cpu()
+            probs_lnd = scores[j, :, :-1].mean(-1).softmax(dim=0).detach().cpu()
             preds_lnd = torch.argmax(probs_lnd, dim=-1).detach().cpu()
             probs_att = classif[j, :].softmax(dim=0).detach().cpu()
             preds_att = torch.argmax(probs_att, dim=-1).detach().cpu()
-            top_class_lnd.append(
-                1 if preds_lnd == lab[j].detach().cpu() else 0)
-            top_class_att.append(
-                1 if preds_att == lab[j].detach().cpu() else 0)
+            top_class_lnd.append(1 if preds_lnd == lab[j].detach().cpu() else 0)
+            top_class_att.append(1 if preds_att == lab[j].detach().cpu() else 0)
 
         # Get landmark coordinates
         loc_x, loc_y, grid_x, grid_y = landmark_coordinates(maps, device)
 
         # Concentration loss
-        loss_conc_x = ((loc_x.unsqueeze(-1).unsqueeze(-1) - grid_x) /
-                       grid_x.shape[-1]) ** 2
-        loss_conc_y = ((loc_y.unsqueeze(-1).unsqueeze(-1) - grid_y) /
-                       grid_y.shape[-2]) ** 2
+        loss_conc_x = ((loc_x.unsqueeze(-1).unsqueeze(-1) - grid_x) / grid_x.shape[-1]) ** 2
+        loss_conc_y = ((loc_y.unsqueeze(-1).unsqueeze(-1) - grid_y) / grid_y.shape[-2]) ** 2
         loss_conc = (loss_conc_x + loss_conc_y) * maps
         loss_conc = (loss_conc[:, 0:-1, :, :].mean()) * l_conc
 
         # Max/presence loss
-        loss_max = \
-            F.avg_pool2d(maps[:, :, 2:-2, 2:-2], 3, stride=1).max(-1)[0] \
-                .max(-1)[0].max(0)[0].mean()
+        loss_max = F.avg_pool2d(maps[:, :, 2:-2, 2:-2], 3, stride=1).max(-1)[0].max(-1)[0].max(0)[0].mean()
         loss_max = (1 - loss_max) * l_max
 
         # Orthogonality loss
         normed_feature = F.normalize(anchor, dim=1)
-        similarity = torch.matmul(normed_feature.permute(0, 2, 1),
-                                  normed_feature)
-        similarity = torch.sub(similarity,
-                               torch.eye(net.num_landmarks + 1).to(device))
+        similarity = torch.matmul(normed_feature.permute(0, 2, 1), normed_feature)
+        similarity = torch.sub(similarity, torch.eye(net.num_landmarks + 1).to(device))
         orth_loss = torch.mean(torch.square(similarity))
         loss_orth = orth_loss * l_orth
 
         # Equivariance loss: calculate cosine similarity between transformed
         # attention map and original attention map
-        translate = [(t * maps.shape[-1] / sample[0].shape[-1]) for t in
-                     translate]
-        rot_back = rigid_transform(equiv_map, angle, translate, scale,
-                                   invert=True)
+        translate = [(t * maps.shape[-1] / sample[0].shape[-1]) for t in translate]
+        rot_back = rigid_transform(equiv_map, angle, translate, scale, invert=True)
         num_elements_per_map = maps.shape[-2] * maps.shape[-1]
-        orig_attmap_vector = torch.reshape(maps[:, :-1, :, :],
-                                           (-1, net.num_landmarks,
-                                            num_elements_per_map))
-        transf_attmap_vector = torch.reshape(rot_back[:, 0:-1, :, :],
-                                             (-1, net.num_landmarks,
-                                              num_elements_per_map))
-        cos_sim_equiv = F.cosine_similarity(orig_attmap_vector,
-                                            transf_attmap_vector, -1)
+        orig_attmap_vector = torch.reshape(maps[:, :-1, :, :], (-1, net.num_landmarks, num_elements_per_map))
+        transf_attmap_vector = torch.reshape(rot_back[:, 0:-1, :, :], (-1, net.num_landmarks, num_elements_per_map))
+        cos_sim_equiv = F.cosine_similarity(orig_attmap_vector, transf_attmap_vector, -1)
         loss_equiv = (1 - torch.mean(cos_sim_equiv)) * l_equiv
 
         total_loss = loss_conc + loss_max + loss_class_attention + loss_orth + loss_equiv + loss_class_landmarks
@@ -164,29 +144,19 @@ def train(net, optimizer, train_loader, device, model_name, epoch,
             running_loss_equiv = 0.99 * running_loss_equiv + 0.01 * loss_equiv.item()
             running_loss_orth = 0.99 * running_loss_orth + 0.01 * loss_orth.item()
             running_loss_class_att = 0.99 * running_loss_class_att + 0.01 * loss_class_attention.item()
-            pbar.set_description(
-                "Cnc: %.3f, M: %.3f, Lnd: %.3f, Eq: %.3f, Or: %.3f, Att: %.3f" % (
-                    running_loss_conc,
-                    running_loss_max, running_loss_class_lnd,
-                    running_loss_equiv, running_loss_orth,
-                    running_loss_class_att))
+            pbar.set_description("Cnc: %.3f, M: %.3f, Lnd: %.3f, Eq: %.3f, Or: %.3f, Att: %.3f" % (running_loss_conc,
+                running_loss_max, running_loss_class_lnd, running_loss_equiv, running_loss_orth, running_loss_class_att))
         pbar.update()
     pbar.close()
     torch.save(net.cpu().state_dict(), f'{model_name}.pt')
-    all_losses = running_loss_conc, running_loss_max, running_loss_class_lnd, \
-                 running_loss_equiv, running_loss_orth, running_loss_class_att
+    all_losses = running_loss_conc, running_loss_max, running_loss_class_lnd, running_loss_equiv, running_loss_orth, \
+                 running_loss_class_att
     with open(f'../results_{model_name}/res.txt', 'a') as fopen:
         fopen.write(f'Epoch: {epoch}\n')
-        fopen.write(
-            "Cnc: %.3f, M: %.3f, Lnd: %.3f, Eq: %.3f, Or: %.3f, Att: %.3f\n" % (
-                running_loss_conc,
-                running_loss_max, running_loss_class_lnd,
-                running_loss_equiv, running_loss_orth,
-                running_loss_class_att))
-        fopen.write(
-            f"Att training top 1: {str(np.mean(np.array(top_class_att)))}\n")
-        fopen.write(
-            f"Lnd training top 1: {str(np.mean(np.array(top_class_lnd)))}\n")
+        fopen.write("Cnc: %.3f, M: %.3f, Lnd: %.3f, Eq: %.3f, Or: %.3f, Att: %.3f\n" % (running_loss_conc,
+            running_loss_max, running_loss_class_lnd, running_loss_equiv, running_loss_orth, running_loss_class_att))
+        fopen.write(f"Att training top 1: {str(np.mean(np.array(top_class_att)))}\n")
+        fopen.write(f"Lnd training top 1: {str(np.mean(np.array(top_class_lnd)))}\n")
     return net, all_losses
 
 
@@ -219,8 +189,7 @@ def validation(device, net, val_loader, epoch, only_test, model_name, save_maps=
     all_labels = []
     all_maxes = torch.Tensor().to(device)
     for i, sample in enumerate(pbar):
-        anchor, maps, scores, feature_tensor, classif = net(
-            sample[0].to(device))
+        anchor, maps, scores, feature_tensor, classif = net(sample[0].to(device))
         scores = scores.detach().cpu()
         all_scores.append(scores)
         lab = sample[1]
@@ -238,8 +207,7 @@ def validation(device, net, val_loader, epoch, only_test, model_name, save_maps=
         map_max = maps.max(-1)[0].max(-1)[0][:, :-1].detach()
         all_maxes = torch.cat((all_maxes, map_max), 0)
         if save_maps:
-            grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]),
-                                            torch.arange(maps.shape[3]))
+            grid_x, grid_y = torch.meshgrid(torch.arange(maps.shape[2]), torch.arange(maps.shape[3]))
             grid_x = grid_x.unsqueeze(0).unsqueeze(0).to(device)
             grid_y = grid_y.unsqueeze(0).unsqueeze(0).to(device)
             map_sums = maps.sum(3).sum(2).detach()
@@ -249,7 +217,6 @@ def validation(device, net, val_loader, epoch, only_test, model_name, save_maps=
             loc_y = maps_y.sum(3).sum(2) / map_sums
             if np.random.random() < 0.01:
                 show_maps(sample[0], maps, loc_x, loc_y, epoch, model_name)
-
 
     top1acc = str(np.mean(np.array(top_class_att)))
     top1acclnd = str(np.mean(np.array(top_class_lnd)))
@@ -263,39 +230,29 @@ def validation(device, net, val_loader, epoch, only_test, model_name, save_maps=
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='PDiscoNet on CelebA'
-    )
-    parser.add_argument('--model_name', help='used to train a new model',
+    parser = argparse.ArgumentParser(description='PDiscoNet on CelebA')
+    parser.add_argument('--model_name', help='used to train a new model', required=True)
+    parser.add_argument('--data_path', help='directory that contains celeba files, must contain folder "./unaligned"',
                         required=True)
-    parser.add_argument('--data_path',
-                        help='directory that contains celeba files, must'
-                             'contain folder "./unaligned"', required=True)
-    parser.add_argument('--num_parts', help='number of parts to predict',
-                        default=8, type=int)
+    parser.add_argument('--num_parts', help='number of parts to predict', default=8, type=int)
     parser.add_argument('--lr', default=1e-4, type=float)
     parser.add_argument('--batch_size', default=20, type=int)
     parser.add_argument('--image_size', default=256, type=int)
     parser.add_argument('--epochs', default=15, type=int)
-    parser.add_argument('--pretrained_model_name', default='',
-                        help='used to load pretrained model')
+    parser.add_argument('--pretrained_model_name', default='', help='used to load pretrained model')
     parser.add_argument('--save_maps', default=True, type=bool)
-    parser.add_argument('--warm_start', default=False,
-                        help='Whether to use a pretrained PDiscoNet', type=bool)
-    parser.add_argument('--only_test', default=False,
-                        help='Whether to only eval the model', type=bool)
+    parser.add_argument('--warm_start', default=False, help='Whether to use a pretrained PDiscoNet', type=bool)
+    parser.add_argument('--only_test', default=False, help='Whether to only eval the model', type=bool)
     args = parser.parse_args()
     if not os.path.exists(f'../results_{args.model_name}'):
         os.mkdir(f'../results_{args.model_name}')
-    print(torch.cuda.is_available())
 
     np.random.seed(1)
 
     train_transforms = transforms.Compose([
         transforms.Resize(size=args.image_size),
         transforms.ColorJitter(0.1),
-        transforms.RandomAffine(degrees=90, translate=(0.2, 0.2),
-                                scale=(0.8, 1.2)),
+        transforms.RandomAffine(degrees=90, translate=(0.2, 0.2), scale=(0.8, 1.2)),
         transforms.RandomCrop(args.image_size),
         transforms.ToTensor(),
     ])
@@ -305,22 +262,14 @@ def main():
         transforms.ToTensor(),
     ])
 
-    dataset_train = CelebA(args.data_path, 'train', False, 0.3,
-                           transform=train_transforms, resize=args.image_size)
-    dataset_val = CelebA(args.data_path, 'val', False, 0.3,
-                         transform=test_transforms, resize=args.image_size)
+    dataset_train = CelebA(args.data_path, 'train', False, 0.3, transform=train_transforms, resize=args.image_size)
+    dataset_val = CelebA(args.data_path, 'val', False, 0.3, transform=test_transforms, resize=args.image_size)
 
-    train_loader = torch.utils.data.DataLoader(dataset=dataset_train,
-                                               batch_size=args.batch_size,
-                                               shuffle=True, num_workers=4)
+    train_loader = torch.utils.data.DataLoader(dataset=dataset_train, batch_size=args.batch_size, shuffle=True,
+                                               num_workers=4)
 
     test_batch = 8
-    val_loader = torch.utils.data.DataLoader(dataset=dataset_val,
-                                             batch_size=test_batch,
-                                             shuffle=False, num_workers=4)
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    val_loader = torch.utils.data.DataLoader(dataset=dataset_val, batch_size=test_batch, shuffle=False, num_workers=4)
 
     weights = ResNet101_Weights.DEFAULT
     basenet = resnet101(weights=weights)
@@ -329,11 +278,16 @@ def main():
     net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls)
 
     if args.warm_start:
-        net.load_state_dict(torch.load(args.pretrained_model_name + '.pt'),
-                            strict=False)
+        net.load_state_dict(torch.load(args.pretrained_model_name + '.pt'), strict=False)
         epoch_leftoff = get_epoch(args.model_name) + 1
     else:
         epoch_leftoff = 0
+
+    if torch.cuda.is_available():
+        print("Using GPU to train.")
+    else:
+        print("Using CPU to train.")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net.to(device)
 
     if args.only_test:
@@ -343,8 +297,7 @@ def main():
     all_losses = []
 
     scratch_layers = ["modulation"]
-    finer_layers = ["fc_class_landmarks",
-                    "fc_class_attention"]
+    finer_layers = ["fc_class_landmarks", "fc_class_attention"]
     finetune_parameters = []
     scratch_parameters = []
     finer_parameters = []
@@ -359,34 +312,25 @@ def main():
 
     loss_fn = torch.nn.CrossEntropyLoss(reduction='none')
 
-
-    loss_hyperparams = {'l_class_lnd': 1, 'l_class_att': 1, 'l_max': 1,
-                        'l_equiv': 1, 'l_conc': 1000, 'l_orth': 1}
-    optimizer = torch.optim.Adam(
-        [{'params': scratch_parameters, 'lr': args.lr * 100},
-         {'params': finer_parameters, 'lr': args.lr * 10},
-         {'params': finetune_parameters, 'lr': args.lr},
-         ])
+    loss_hyperparams = {'l_class_lnd': 1, 'l_class_att': 1, 'l_max': 1, 'l_equiv': 1, 'l_conc': 1000, 'l_orth': 1}
+    optimizer = torch.optim.Adam([{'params': scratch_parameters, 'lr': args.lr * 100}, {'params': finer_parameters,
+                                            'lr': args.lr * 10}, {'params': finetune_parameters, 'lr': args.lr}, ])
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 3, 0.5)
     for epoch in range(epoch_leftoff, args.epochs):
         if not args.only_test:
             if all_losses:
-                net, all_losses = train(net, optimizer, train_loader, device,
-                                        args.model_name, epoch, 0, loss_fn,
+                net, all_losses = train(net, optimizer, train_loader, device, args.model_name, epoch, 0, loss_fn,
                                         loss_hyperparams, all_losses)
             else:
-                net, all_losses = train(net, optimizer, train_loader, device,
-                                        args.model_name, epoch, epoch_leftoff,
+                net, all_losses = train(net, optimizer, train_loader, device, args.model_name, epoch, epoch_leftoff,
                                         loss_fn, loss_hyperparams)
             scheduler.step()
             print(f'Validation accuracy in epoch {epoch}:')
-            validation(device, net, val_loader, epoch, args.only_test,
-                       args.model_name, save_maps=args.save_maps)
+            validation(device, net, val_loader, epoch, args.only_test, args.model_name, save_maps=args.save_maps)
             torch.cuda.empty_cache()
         else:
             print('Validation accuracy with saved network:')
-            validation(device, net, val_loader, epoch, args.only_test,
-                       args.model_name, save_maps=args.save_maps)
+            validation(device, net, val_loader, epoch, args.only_test, args.model_name, save_maps=args.save_maps)
 
 
 if __name__ == "__main__":

@@ -20,9 +20,8 @@ import argparse
 torch.multiprocessing.set_sharing_strategy('file_system')
 torch.cuda.empty_cache()
 
-
-def train(net, optimizer, train_loader, device, model_name, epoch,
-          epoch_leftoff, loss_fn, loss_hyperparams, all_losses=None):
+def train(net, optimizer, train_loader, device, model_name, epoch, epoch_leftoff, loss_fn, loss_hyperparams,
+          all_losses=None):
     """
     Model trainer, saves losses to file
     Parameters
@@ -282,10 +281,7 @@ def main():
 
     if not os.path.exists(f'../results_{args.model_name}'):
         os.mkdir(f'../results_{args.model_name}')
-    if torch.cuda.is_available():
-        print("Using GPU to train.")
-    else:
-        print("Using CPU to train.")
+
 
     np.random.seed(1)
     train_transforms = transforms.Compose([
@@ -328,6 +324,10 @@ def main():
     else:
         epoch_leftoff = 0
 
+    if torch.cuda.is_available():
+        print("Using GPU to train.")
+    else:
+        print("Using CPU to train.")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net.to(device)
 

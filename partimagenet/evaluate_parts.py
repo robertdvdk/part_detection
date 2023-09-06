@@ -9,6 +9,7 @@ from torchvision.models import resnet101
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
 from lib import *
 import torch.nn.functional as F
+import argparse
 
 # number of attributes and landmark annotations
 def eval_nmi_ari(net, data_loader):
@@ -69,26 +70,29 @@ def eval_nmi_ari(net, data_loader):
     return nmi, ari
 
 def main():
+    parser = argparse.ArgumentParser(description='Evaluate PDiscoNet parts on PartImageNet')
+    parser.add_argument('--pretrained_model_name', help='Name of the trained model', required=True)
+    parser.add_argument('--data_path', help='The folder containing the train, val, and test folders',
+                        default='../datasets/partimagenet')
+    parser.add_argument('--num_parts', help='Number of parts the model was trained with', required=True, type=int)
+    parser.add_argument('--image_size', default=256, type=int)
+    args = parser.parse_args()
     # define data transformation (no crop)
-    nparts = 8
     num_cls = 110
-    height = 256
     data_transforms = transforms.Compose([
-        transforms.Resize(size=height),
+        transforms.Resize(size=args.image_size),
         transforms.ToTensor(),
     ])
-    pim_path = "../datasets/partimagenet"
     # define dataset and loader
-    eval_data = PartImageNetDataset(pim_path,
-                        mode='test', transform=data_transforms, get_masks=True)
+    eval_data = PartImageNetDataset(args.data_path, mode='test', transform=data_transforms, get_masks=True)
     eval_loader = torch.utils.data.DataLoader(
         eval_data, batch_size=1, shuffle=False,
         num_workers=1, pin_memory=False, drop_last=False)
 
     # load the net in eval mode
     basenet = resnet101()
-    net = IndividualLandmarkNet(basenet, nparts, num_classes=num_cls).cuda()
-    checkpoint = torch.load("./SANITY_CHECK_ALL_NORMAL_ABLATION_PARTIMAGENET_8PARTS.pt")
+    net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls).cuda()
+    checkpoint = torch.load(args.model_name + '.pt')
 
     net.load_state_dict(checkpoint, strict=True)
     net.eval()

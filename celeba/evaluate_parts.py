@@ -13,6 +13,7 @@ from torchvision.models import resnet101
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
 from lib import *
 import torch.nn.functional as F
+import argparse
 
 # Naming used: 'landmarks' are ground truth parts, 'parts' are predicted parts
 num_landmarks = 5
@@ -256,50 +257,46 @@ def eval_kpr(net, fit_loader, eval_loader, nparts):
 
     return error
 
-def main(mode):
+def main():
+    parser = argparse.ArgumentParser(description='Evaluate PDiscoNet parts on CelebA')
+    parser.add_argument('--pretrained_model_name', help='Name of the trained model', required=True)
+    parser.add_argument('--data_path', help='The folder containing the unaligned folder',
+                        default='../datasets/celeba')
+    parser.add_argument('--num_parts', help='Number of parts the model was trained with', required=True, type=int)
+    parser.add_argument('--image_size', default=256, type=int)
+    args = parser.parse_args()
     # define data transformation (no crop)
-    nparts = 8
     num_cls = 10177
-    height = 256
     data_transforms = transforms.Compose([
-        transforms.Resize(size=256),
+        transforms.Resize(size=args.image_size),
         transforms.ToTensor(),
     ])
-    celeba_path = "../datasets/celeba"
     # define dataset and loader
-    eval_data = CelebA(celeba_path,
-                       split='eval', align=False, percentage=0.3,
-                       transform=data_transforms, resize=height)
-    eval_loader = torch.utils.data.DataLoader(
-        eval_data, batch_size=1, shuffle=False,
-        num_workers=1, pin_memory=False, drop_last=False)
+    eval_data = CelebA(args.data_path, split='eval', align=False, percentage=0.3, transform=data_transforms,
+                       resize=args.image_size)
+    eval_loader = torch.utils.data.DataLoader(eval_data, batch_size=1, shuffle=False, num_workers=1, pin_memory=False,
+                                              drop_last=False)
 
     # load the net in eval mode
     basenet = resnet101()
-    net = IndividualLandmarkNet(basenet, nparts, num_classes=num_cls).cuda()
-    checkpoint = torch.load("./celeb_8parts.pt")
+    net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls).cuda()
+    checkpoint = torch.load(args.model_name + '.pt')
     net.load_state_dict(checkpoint, strict=True)
     net.eval()
 
-    if mode == 'keypoint':
-        fit_data = CelebA(celeba_path,
-                          split='fit', align=False, percentage=0.3,
-                          transform=data_transforms, resize=height)
-        fit_loader = torch.utils.data.DataLoader(
-            fit_data, batch_size=1, shuffle=False,
-            num_workers=1, pin_memory=False, drop_last=False)
-        kpr = eval_kpr(net, fit_loader, eval_loader, nparts)
-        print('Mean keypoint regression error on the test set is %.2f%%.' % kpr)
+    # Calculate keypoint regression error
+    fit_data = CelebA(args.data_path, split='fit', align=False, percentage=0.3, transform=data_transforms,
+                      resize=args.image_size)
+    fit_loader = torch.utils.data.DataLoader(fit_data, batch_size=1, shuffle=False, num_workers=1, pin_memory=False,
+                                             drop_last=False)
+    kpr = eval_kpr(net, fit_loader, eval_loader, args.num_parts)
+    print('Mean keypoint regression error on the test set is %.2f%%.' % kpr)
 
-    elif mode == 'nmi_ari':
-        nmi, ari = eval_nmi_ari(net, eval_loader)
-        print('NMI between predicted and ground truth parts is %.2f' % nmi)
-        print('ARI between predicted and ground truth parts is %.2f' % ari)
-        print('Evaluation finished.')
-
-    else:
-        print("Please run with either keypoint or nmi_ari")
+    # Calculate NMI and ARI
+    nmi, ari = eval_nmi_ari(net, eval_loader)
+    print('NMI between predicted and ground truth parts is %.2f' % nmi)
+    print('ARI between predicted and ground truth parts is %.2f' % ari)
+    print('Evaluation finished.')
 
 if __name__ == '__main__':
-    # Run as either 'keypoint' or 'nmi_ari'
-    main('nmi_ari')
+    main()

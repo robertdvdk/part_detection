@@ -18,10 +18,8 @@ from tqdm import tqdm
 torch.multiprocessing.set_sharing_strategy('file_system')
 torch.cuda.empty_cache()
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-def train(net, optimizer, train_loader, device, model_name, epoch,
-          epoch_leftoff, loss_fn, loss_hyperparams, all_losses=None):
+def train(net, optimizer, train_loader, device, model_name, epoch, epoch_leftoff, loss_fn, loss_hyperparams,
+          all_losses=None):
     """
     Model trainer, saves losses to file
     Parameters
@@ -298,7 +296,6 @@ def main():
     val_loader = torch.utils.data.DataLoader(dataset=dataset_val,
                                              batch_size=test_batch,
                                              shuffle=True, num_workers=4)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     weights = ResNet101_Weights.DEFAULT
     basenet = resnet101(weights=weights)
@@ -306,12 +303,21 @@ def main():
 
     net = IndividualLandmarkNet(basenet, int(args.num_parts), num_classes=num_cls)
 
+
+
+
     if args.warm_start:
         net.load_state_dict(torch.load(args.pretrained_model_name) + '.pt',
                             strict=False)
         epoch_leftoff = get_epoch(args.model_name) + 1
     else:
         epoch_leftoff = 0
+
+    if torch.cuda.is_available():
+        print("Using GPU to train.")
+    else:
+        print("Using CPU to train.")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     net.to(device)
 
     if args.only_test:
@@ -352,8 +358,7 @@ def main():
                                         args.model_name, epoch, 0, loss_fn,
                                         loss_hyperparams, all_losses)
             else:
-                net, all_losses = train(net, optimizer, train_loader, device,
-                                        args.model_name, epoch, epoch_leftoff,
+                net, all_losses = train(net, optimizer, train_loader, device, args.model_name, epoch, epoch_leftoff,
                                         loss_fn, loss_hyperparams)
             scheduler.step()
             print(f'Validation accuracy in epoch {epoch}:')
