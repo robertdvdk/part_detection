@@ -1,5 +1,7 @@
 <h1>PDiscoNet: Semantically consistent part discovery for fine-grained recognition</h1> 
 
+This is the GitHub page for the paper [Semantically consistent part discovery for fine-grained recognition](https://openaccess.thecvf.com/content/ICCV2023/papers/van_der_Klis_PDiscoNet_Semantically_consistent_part_discovery_for_fine-grained_recognition_ICCV_2023_paper.pdf). 
+
 <h2> Datasets and environment </h2>
 
 First, download the datasets here:
