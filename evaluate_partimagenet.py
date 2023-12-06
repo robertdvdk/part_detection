@@ -3,7 +3,7 @@ In large part from: https://github.com/subhc/unsup-parts/
 """
 
 # pytorch & misc
-from dataset import *
+from datasets import PartImageNetDataset
 from nets import *
 from torchvision.models import resnet101
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
@@ -36,17 +36,13 @@ def eval_nmi_ari(net, data_loader):
     # bbox shape: [N, 5]
     for i in range(len(data_loader)):
         print(i)
-        (input_raw, _, landmarks_raw) = next(iter_loader)
+        (inputs, _, landmarks) = next(iter_loader)
         # to device
-        input_raw = input_raw.cuda()
-        landmarks_raw = landmarks_raw.cuda()
-
-        # cut the input and transform the landmark
-        inputs, landmarks_full = input_raw, landmarks_raw
+        inputs, landmarks = inputs.cuda(), landmarks.cuda()
 
         # Used to filter out all pixels that have < 0.1 value for all GT parts
-        background_landmark = torch.full(size=(1, 1, landmarks_full.shape[-2], landmarks_full.shape[-1]), fill_value=0.1).cuda()
-        landmarks_full = torch.cat((landmarks_full, background_landmark), dim=1)
+        background_landmark = torch.full(size=(1, 1, landmarks.shape[-2], landmarks.shape[-1]), fill_value=0.1).cuda()
+        landmarks_full = torch.cat((landmarks, background_landmark), dim=1)
 
         # Check which part is most active per pixel
         landmarks_argmax = torch.argmax(landmarks_full, dim=1)
@@ -54,7 +50,7 @@ def eval_nmi_ari(net, data_loader):
 
         with torch.no_grad():
             # generate assignment map
-            maps = net(inputs)[1]
+            _, maps, _ = net(inputs)
             part_name_mat_w_bg = F.interpolate(maps, size=inputs.shape[-2:], mode='bilinear', align_corners=False)
 
             pred_parts_loc_w_bg = torch.argmax(part_name_mat_w_bg, dim=1)
@@ -71,20 +67,15 @@ def eval_nmi_ari(net, data_loader):
 
 def main():
     parser = argparse.ArgumentParser(description='Evaluate PDiscoNet parts on PartImageNet')
-    parser.add_argument('--pretrained_model_name', help='Name of the trained model', required=True)
-    parser.add_argument('--data_path', help='The folder containing the train, val, and test folders',
-                        default='../datasets/partimagenet')
+    parser.add_argument('--model_path', help='Path to .pt file', required=True)
+    parser.add_argument('--data_root', help='The directory containing partimagenet folder', required=True)
     parser.add_argument('--num_parts', help='Number of parts the model was trained with', required=True, type=int)
-    parser.add_argument('--image_size', default=256, type=int)
+    parser.add_argument('--image_size', default=224, type=int)
     args = parser.parse_args()
     # define data transformation (no crop)
     num_cls = 110
-    data_transforms = transforms.Compose([
-        transforms.Resize(size=args.image_size),
-        transforms.ToTensor(),
-    ])
     # define dataset and loader
-    eval_data = PartImageNetDataset(args.data_path, mode='test', transform=data_transforms, get_masks=True)
+    eval_data = PartImageNetDataset(args.data_root + '/partimagenet', mode='test', get_masks=True, evaluate=True)
     eval_loader = torch.utils.data.DataLoader(
         eval_data, batch_size=1, shuffle=False,
         num_workers=1, pin_memory=False, drop_last=False)
@@ -92,7 +83,7 @@ def main():
     # load the net in eval mode
     basenet = resnet101()
     net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls).cuda()
-    checkpoint = torch.load(args.model_name + '.pt')
+    checkpoint = torch.load(args.model_path)
 
     net.load_state_dict(checkpoint, strict=True)
     net.eval()

@@ -7,7 +7,7 @@ and https://github.com/subhc/unsup-parts/blob/dba2ced195e48bde9eb33cd3ab7134a1ff
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 import torchvision.transforms as transforms
-from dataset import *
+from datasets import CelebA
 from nets import *
 from torchvision.models import resnet101
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
@@ -17,6 +17,7 @@ import argparse
 
 # Naming used: 'landmarks' are ground truth parts, 'parts' are predicted parts
 num_landmarks = 5
+
 
 def create_centers(data_loader, net, num_parts):
     """
@@ -61,16 +62,16 @@ def create_centers(data_loader, net, num_parts):
         with torch.no_grad():
 
             # generate assignment map
-            _, assignment, _, _, _ = net(inputs)
-            assignment = assignment[:, :-1, :, :]
-            maxes = assignment.max(-1)[0].max(-1)[0]
+            _, maps, _, = net(inputs)
+            maps = maps[:, :-1, :, :]
+            maxes = maps.max(-1)[0].max(-1)[0]
             active_parts = torch.where(maxes > 0.5, 1, 0).unsqueeze(-1).expand(-1, -1, 2)
 
             # calculate the center coordinates of shape [N, num_parts, 2]
             loc_x, loc_y, grid_x, grid_y = landmark_coordinates(
-                assignment.cpu(), "cpu")
-            x_centroid = loc_x * inputs.shape[-2]/assignment.shape[-2]
-            y_centroid = loc_y * inputs.shape[-1]/assignment.shape[-1]
+                maps.cpu(), "cpu")
+            x_centroid = loc_x * inputs.shape[-2]/maps.shape[-2]
+            y_centroid = loc_y * inputs.shape[-1]/maps.shape[-1]
             centers = torch.stack((x_centroid, y_centroid), dim=-1)
 
             # collect the centers and annotations, active parts
@@ -163,8 +164,7 @@ def eval_nmi_ari(net, data_loader):
             pred_parts_loc_w_bg = pred_parts_loc_w_bg[0]
             all_nmi_preds_w_bg.append(pred_parts_loc_w_bg.cpu().numpy())
 
-            gt_parts_loc = torch.arange(landmarks.shape[1]).unsqueeze(0).\
-                repeat(landmarks.shape[0], 1)
+            gt_parts_loc = torch.arange(landmarks.shape[1]).unsqueeze(0).repeat(landmarks.shape[0], 1)
             gt_parts_loc = gt_parts_loc[0]
             all_nmi_gts.append(gt_parts_loc.cpu().numpy())
 
@@ -174,6 +174,7 @@ def eval_nmi_ari(net, data_loader):
     ari = adjusted_rand_score(nmi_gts, nmi_preds) * 100
 
     return nmi, ari
+
 
 def eval_kpr(net, fit_loader, eval_loader, nparts):
     """
@@ -195,17 +196,13 @@ def eval_kpr(net, fit_loader, eval_loader, nparts):
     """
     # convert the assignment to centers for both splits
     print('Evaluating the keypoint regression for the whole data split...')
-    fit_centers, fit_annos, fit_eyedists, fit_active_centers = \
-        create_centers(fit_loader, net, nparts)
-    eval_centers, eval_annos, eval_eyedists, eval_active_centers = \
-        create_centers(eval_loader, net, nparts)
+    fit_centers, fit_annos, fit_eyedists, fit_active_centers = create_centers(fit_loader, net, nparts)
+    eval_centers, eval_annos, eval_eyedists, eval_active_centers = create_centers(eval_loader, net, nparts)
     eval_data_size = eval_centers.shape[0]
 
     # normalize the centers to make sure every face image has unit eye distance
-    fit_centers, fit_annos = fit_centers / fit_eyedists, \
-                             fit_annos / fit_eyedists
-    eval_centers, eval_annos = eval_centers / eval_eyedists, \
-                               eval_annos / eval_eyedists
+    fit_centers, fit_annos = fit_centers / fit_eyedists, fit_annos / fit_eyedists
+    eval_centers, eval_annos = eval_centers / eval_eyedists, eval_annos / eval_eyedists
 
     # fit the linear regressor with sklearn
     # normalized assignment center coordinates -> normalized landmark coordinate annotations
@@ -257,36 +254,29 @@ def eval_kpr(net, fit_loader, eval_loader, nparts):
 
     return error
 
+
 def main():
-    parser = argparse.ArgumentParser(description='Evaluate PDiscoNet parts on CelebA')
-    parser.add_argument('--pretrained_model_name', help='Name of the trained model', required=True)
-    parser.add_argument('--data_path', help='The folder containing the unaligned folder',
-                        default='../datasets/celeba')
+    parser = argparse.ArgumentParser(description='Evaluate PDiscoNet parts on CUB')
+    parser.add_argument('--model_path', help='Path to .pt file', required=True)
+    parser.add_argument('--data_root', help='The directory containing the celeba folder', required=True)
     parser.add_argument('--num_parts', help='Number of parts the model was trained with', required=True, type=int)
     parser.add_argument('--image_size', default=256, type=int)
     args = parser.parse_args()
     # define data transformation (no crop)
     num_cls = 10177
-    data_transforms = transforms.Compose([
-        transforms.Resize(size=args.image_size),
-        transforms.ToTensor(),
-    ])
     # define dataset and loader
-    eval_data = CelebA(args.data_path, split='eval', align=False, percentage=0.3, transform=data_transforms,
-                       resize=args.image_size)
+    eval_data = CelebA(args.data_root + '/celeba', split='eval', percentage=0.3, evaluate=True)
     eval_loader = torch.utils.data.DataLoader(eval_data, batch_size=1, shuffle=False, num_workers=1, pin_memory=False,
                                               drop_last=False)
-
     # load the net in eval mode
     basenet = resnet101()
     net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls).cuda()
-    checkpoint = torch.load(args.model_name + '.pt')
+    checkpoint = torch.load(args.model_path)
     net.load_state_dict(checkpoint, strict=True)
     net.eval()
 
     # Calculate keypoint regression error
-    fit_data = CelebA(args.data_path, split='fit', align=False, percentage=0.3, transform=data_transforms,
-                      resize=args.image_size)
+    fit_data = CelebA(args.data_root + '/celeba', split='fit', percentage=0.3, evaluate=True)
     fit_loader = torch.utils.data.DataLoader(fit_data, batch_size=1, shuffle=False, num_workers=1, pin_memory=False,
                                              drop_last=False)
     kpr = eval_kpr(net, fit_loader, eval_loader, args.num_parts)
@@ -297,6 +287,7 @@ def main():
     print('NMI between predicted and ground truth parts is %.2f' % nmi)
     print('ARI between predicted and ground truth parts is %.2f' % ari)
     print('Evaluation finished.')
+
 
 if __name__ == '__main__':
     main()

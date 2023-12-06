@@ -72,7 +72,7 @@ python main.py --model_name celeb_8parts --data_path ../datasets/celeba --num_pa
 <h5>Evaluating parts</h5>
 
 ```
-python evaluate_parts.py --pretrained_model_name celeb_8parts --data_path ../datasets/celeba --num_parts 8 ---image_size 256
+python evaluate_parts.py --pretrained_model_name celeb_8parts --data_path ../datasets/celeba --num_parts 8 --image_size 256
 ```
 
 <h3>CUB</h3>
@@ -91,7 +91,7 @@ python main.py --model_name CUB_8parts --data_path ../datasets/cub/CUB_200_2011 
 <h5>Evaluating parts</h5>
 
 ```
-python evaluate_parts.py --pretrained_model_name PARTIMAGENET_25parts --data_path ../datasets/partimagenet --num_parts 8 ---image_size 448
+python evaluate_parts.py --pretrained_model_name PARTIMAGENET_25parts --data_path ../datasets/partimagenet --num_parts 8 --image_size 448
 ```
 
 <h3>PartImageNet</h3>
@@ -110,7 +110,7 @@ python main.py --model_name PARTIMAGENET_25parts --data_path ../datasets/partima
 <h5>Evaluating parts</h5>
 
 ```
-python evaluate_parts.py --pretrained_model_name PARTIMAGENET_25parts --data_path ../datasets/partimagenet --num_parts 25 ---image_size 256
+python evaluate_parts.py --pretrained_model_name PARTIMAGENET_25parts --data_path ../datasets/partimagenet --num_parts 25 --image_size 256
 ```
 
 <h2> Acknowledgements </h2>

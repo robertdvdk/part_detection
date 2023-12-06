@@ -7,7 +7,7 @@ Large parts from: https://github.com/zxhuang1698/interpretability-by-parts/blob/
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 import torchvision.transforms as transforms
-from dataset import *
+from datasets import CUB200
 from nets import *
 from torchvision.models import resnet101
 from sklearn.metrics import normalized_mutual_info_score, adjusted_rand_score
@@ -16,9 +16,8 @@ import torch.nn.functional as F
 import argparse
 
 # number of attributes and ground truth landmarks
-torch.multiprocessing.set_sharing_strategy('file_system')
-num_classes = 200
 num_landmarks = 15
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 def create_centers(data_loader, model, num_parts):
     """
@@ -71,15 +70,16 @@ def create_centers(data_loader, model, num_parts):
         with torch.no_grad():
 
             # generate assignment map
-            _, assignment, logits_parts, _, logits = model(inputs)
-            maxes = assignment.max(-1)[0].max(-1)[0]
+            _, maps, logits_parts = model(inputs)
+            logits = logits_parts[:, :, :-1].mean(-1)
+            maxes = maps[:, :-1, :, :].max(-1)[0].max(-1)[0]
             active_parts = torch.where(maxes > 0.5, 1, 0).unsqueeze(-1).expand(-1, -1, 2)
 
             # calculate the center coordinates of shape [N, num_parts, 2]
             loc_x, loc_y, grid_x, grid_y = landmark_coordinates(
-                assignment[:, :-1, :, :].cpu(), "cpu")
-            x_centroid = loc_x * inputs.shape[-2] / assignment.shape[-2]
-            y_centroid = loc_y * inputs.shape[-1] / assignment.shape[-1]
+                maps[:, :-1, :, :].cpu(), "cpu")
+            x_centroid = loc_x * inputs.shape[-2] / maps.shape[-2]
+            y_centroid = loc_y * inputs.shape[-1] / maps.shape[-1]
             centers = torch.stack((y_centroid, x_centroid), dim=-1).view(1, num_parts, 2).cuda()
 
             # extract the landmark and existence mask, [N, num_landmarks, 2]
@@ -102,7 +102,7 @@ def create_centers(data_loader, model, num_parts):
             gt_labels.append(gt_class.unsqueeze(0))
             pred_final.append(logits.argmax().unsqueeze(0))
             pred_landmarks.append(logits_parts[:,:,:-1].argmax(1))
-            present_landmarks.append(assignment.max(-1)[0].max(-1)[0].view(-1))
+            present_landmarks.append(maps.max(-1)[0].max(-1)[0].view(-1))
 
     # list into tensors
     centers_tensor = torch.cat(centers_collection, dim=0)
@@ -110,18 +110,13 @@ def create_centers(data_loader, model, num_parts):
     masks_tensor = torch.cat(masks_collection, dim=0)
     active_tensor = torch.cat(active_parts_collection, dim=0)
 
-    gt_labels = torch.cat(gt_labels, dim=0)
-    pred_final = torch.cat(pred_final, dim=0)
-    present_landmarks = torch.cat(present_landmarks, dim=0)
-
     # reshape the tensors
     centers_tensor = centers_tensor.contiguous().view(centers_tensor.shape[0], num_parts * 2)
     annos_tensor = annos_tensor.contiguous().view(centers_tensor.shape[0], num_landmarks * 2)
     masks_tensor = masks_tensor.contiguous().view(centers_tensor.shape[0], num_landmarks * 2)
     active_tensor = active_tensor.contiguous().view(active_tensor.shape[0], num_parts * 2)
 
-    return centers_tensor, annos_tensor, masks_tensor, active_tensor, gt_labels, pred_final, pred_landmarks, \
-           present_landmarks
+    return centers_tensor, annos_tensor, masks_tensor, active_tensor
 
 def L2_distance(prediction, annotation):
     """
@@ -176,7 +171,7 @@ def eval_nmi_ari(net, data_loader):
 
         with torch.no_grad():
             # generate assignment map
-            _, maps, logits_parts, _, logits = net(inputs)
+            _, maps, _ = net(inputs)
             part_name_mat_w_bg = F.interpolate(maps, size=inputs.shape[-2:], mode='bilinear', align_corners=False)
 
             # extract the landmark and existence mask, [N, num_landmarks, 2]
@@ -193,7 +188,7 @@ def eval_nmi_ari(net, data_loader):
             pred_parts_loc_w_bg = pred_parts_loc_w_bg[visible]
             all_nmi_preds_w_bg.append(pred_parts_loc_w_bg.cpu().numpy())
 
-            gt_parts_loc = torch.arange(landmarks_full.shape[1]).unsqueeze(0).repeat(landmarks_full.shape[0], 1)
+            gt_parts_loc = torch.arange(landmarks_full.shape[1]).unsqueeze(0).repeat(landmarks_full.shape[0], 1).cuda()
             gt_parts_loc = gt_parts_loc[visible]
             all_nmi_gts.append(gt_parts_loc.cpu().numpy())
 
@@ -224,9 +219,8 @@ def eval_kpr(net, fit_loader, eval_loader, nparts):
     """
     # convert the assignment to centers for both splits
     print('Evaluating the model for the whole data split...')
-    fit_centers, fit_annos, fit_masks, fit_active_centers, _, _, _ , _ = create_centers(fit_loader, net, nparts)
-    eval_centers, eval_annos, eval_masks, eval_active_centers, gt_labels, pred_final, pred_landmarks, \
-    present_landmarks = create_centers(eval_loader, net, nparts)
+    fit_centers, fit_annos, fit_masks, fit_active_centers = create_centers(fit_loader, net, nparts)
+    eval_centers, eval_annos, eval_masks, eval_active_centers = create_centers(eval_loader, net, nparts)
 
     # fit the linear regressor with sklearn
     # normalized assignment center coordinates -> normalized landmark coordinate annotations
@@ -307,32 +301,27 @@ def eval_kpr(net, fit_loader, eval_loader, nparts):
 
 def main():
     parser = argparse.ArgumentParser(description='Evaluate PDiscoNet parts on CUB')
-    parser.add_argument('--pretrained_model_name', help='Name of the trained model', required=True)
-    parser.add_argument('--data_path', help='The folder containing the CUB_200_2011 folder',
-                        default='../datasets/cub')
+    parser.add_argument('--model_path', help='Path to .pt file', required=True)
+    parser.add_argument('--data_root', help='The directory containing the cub folder', required=True)
     parser.add_argument('--num_parts', help='Number of parts the model was trained with', required=True, type=int)
     parser.add_argument('--image_size', default=448, type=int)
     args = parser.parse_args()
     num_cls = 200
-    data_transforms = transforms.Compose([
-        transforms.Resize(size=args.image_size),
-        transforms.ToTensor(),
-    ])
     # define dataset and loader
-    eval_data = CUB200(args.data_path, train=False, transform=data_transforms, resize=args.image_size)
-    eval_loader = torch.utils.data.DataLoader(eval_data, batch_size=1, shuffle=False, num_workers=1, pin_memory=False,
+    eval_data = CUB200(args.data_root + '/cub', train=False, image_size=args.image_size, evaluate=True)
+    eval_loader = torch.utils.data.DataLoader(eval_data, batch_size=1, shuffle=False, num_workers=4, pin_memory=False,
                                               drop_last=False)
 
     # load the net in eval mode
     basenet = resnet101()
     net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls).cuda()
-    checkpoint = torch.load(args.model_name + '.pt')
+    checkpoint = torch.load(args.model_path)
     net.load_state_dict(checkpoint, strict=False)
     net.eval()
 
     # Calculate keypoint regression error
-    fit_data = CUB200(args.data_path, train=True, transform=data_transforms, resize=args.image_size)
-    fit_loader = torch.utils.data.DataLoader(fit_data, batch_size=1, shuffle=True, num_workers=1, pin_memory=False,
+    fit_data = CUB200(args.data_root + '/cub', train=True, image_size=args.image_size, evaluate=True)
+    fit_loader = torch.utils.data.DataLoader(fit_data, batch_size=1, shuffle=True, num_workers=4, pin_memory=False,
                                              drop_last=False)
     kpr = eval_kpr(net, fit_loader, eval_loader, args.num_parts)
     print('Mean keypoint regression error on the test set is %.2f%%.' % kpr)
