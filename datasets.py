@@ -504,8 +504,7 @@ class CUB200(torch.utils.data.Dataset):
             boxes = self._test_boxes[index]
 
         # load the image
-        image = self.loader(image_path)
-        image = np.array(image)
+        image = torchvision.io.read_image(image_path, torchvision.io.ImageReadMode.RGB)
 
         # numpy arrays to pytorch tensors
         parts = torch.from_numpy(parts).float()
@@ -513,10 +512,10 @@ class CUB200(torch.utils.data.Dataset):
 
         # calculate the resize factor
         # if original image height is larger than width, the real resize factor is based on width
-        if image.shape[0] >= image.shape[1]:
-            factor = self.newsize / image.shape[1]
+        if image.shape[1] >= image.shape[2]:
+            factor = self.newsize / image.shape[2]
         else:
-            factor = self.newsize / image.shape[0]
+            factor = self.newsize / image.shape[1]
 
         # transform 15 landmarks according to the new shape
         # each landmark has a 4-element annotation: <landmark_id, column, row, existence>
@@ -531,9 +530,6 @@ class CUB200(torch.utils.data.Dataset):
         # rescale the annotation of bounding boxes
         # the annotation format of the bounding boxes are <image_id, col of top-left corner, row of top-left corner, width, height>
         boxes[1:] *= factor
-
-        # convert the image into a PIL image for transformation
-        image = Image.fromarray(image)
 
         # apply transformation
         if self._transform is not None:

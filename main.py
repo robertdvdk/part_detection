@@ -23,8 +23,8 @@ def main():
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--image_size', default=448, type=int) # 256 for celeba, 448 for cub,  224 for partimagenet
     parser.add_argument('--epochs', default=20, type=int) # 15 for celeba, 28 for cub, 20 for partimagenet
-    parser.add_argument('--pretrained_model_path', default='', help='If you want to load a pretrained model, '
-                                                                    'specify the path to the .pt file here')
+    parser.add_argument('--pretrained_model_path', default='', help='If you want to load a pretrained model,'
+                        'specify the path to the model here.')
     parser.add_argument('--save_figures', default=False,
                         help='Whether to save the attention maps to png', action='store_true')
     parser.add_argument('--only_test', default=False, action='store_true', help='Whether to only test the model')
@@ -39,9 +39,6 @@ def main():
     writer.add_text('Batch size', str(args.batch_size))
     writer.add_text('Epochs', str(args.epochs))
     writer.add_text('Number of parts', str(args.num_parts))
-
-    if not os.path.exists(f'./results_{args.model_name}'):
-        os.mkdir(f'./results_{args.model_name}')
 
     with open(f'{args.dataset}/{args.model_name}.json', 'w') as f:
         json.dump(vars(args), f, indent=4)
@@ -76,6 +73,8 @@ def main():
     net = IndividualLandmarkNet(basenet, args.num_parts, num_classes=num_cls)
 
     if args.pretrained_model_path:
+        if not os.path.exists(f'./results_{args.model_name}'):
+            os.mkdir(f'./results_{args.model_name}')
         net.load_state_dict(torch.load(args.pretrained_model_path))
 
     net.to(device)
